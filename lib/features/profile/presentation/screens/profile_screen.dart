@@ -30,6 +30,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   bool _initialized = false;
   bool _isUploadingPhoto = false;
+  bool _isSyncingId = false;
+  String? _idSyncError;
   bool? _usernameAvailable;
   bool _checkingUsername = false;
   String _lastCheckedUsername = '';
@@ -48,6 +50,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _usernameController.text = user.username;
     _aboutController.text = user.about;
     _initialized = true;
+  }
+
+  Future<void> _syncOrGenerateId() async {
+    if (_isSyncingId) return;
+    setState(() {
+      _isSyncingId = true;
+      _idSyncError = null;
+    });
+    try {
+      await ref
+          .read(profileControllerProvider.notifier)
+          .syncAccountAndGenerateId();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Perfil e ID exclusivo sincronizados!')),
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      setState(() => _idSyncError = e.message);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      const msg = 'Não foi possível gerar o ID agora. Tente novamente.';
+      setState(() => _idSyncError = msg);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(msg),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingId = false);
+      }
+    }
   }
 
   Future<void> _checkUsername(String value, String currentUsername) async {
@@ -199,19 +241,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Future<void> _copyPublicId(String publicId) async {
-    await Clipboard.setData(ClipboardData(text: publicId));
+  Future<void> _copyIdentifier(String value, String label) async {
+    await Clipboard.setData(ClipboardData(text: value));
     await HapticFeedback.lightImpact();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('ID $publicId copiado!')),
+      SnackBar(content: Text('$label $value copiado!')),
     );
   }
 
-  Future<void> _sharePublicId(AppUser user) async {
-    await Share.share(
-      'Me adicione no Zapi!\nMeu ID: ${user.publicId}\nMeu @usuário: @${user.username}',
-    );
+  Future<void> _shareIdentifiers(AppUser user) async {
+    final lines = <String>['Me adicione no Zapi!'];
+    if (user.publicId.isNotEmpty) {
+      lines.add('Meu ID: ${user.publicId}');
+    }
+    if (user.username.isNotEmpty) {
+      lines.add('Meu @usuário: @${user.username}');
+    }
+    await Share.share(lines.join('\n'));
   }
 
   Future<void> _saveProfile() async {
@@ -237,6 +284,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Não foi possível salvar seu perfil agora.'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -247,7 +302,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ref.watch(firebaseAuthProvider).currentUser?.email ??
         '';
     final profileMutation = ref.watch(profileControllerProvider);
-    final isSaving = profileMutation.isLoading && !_isUploadingPhoto;
+    final isSaving =
+        profileMutation.isLoading && !_isUploadingPhoto && !_isSyncingId;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
@@ -259,18 +315,86 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         error: (error, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              'Não foi possível carregar seu perfil.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: secondaryText),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Não foi possível carregar seu perfil.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: secondaryText),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _isSyncingId ? null : _syncOrGenerateId,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Tentar novamente'),
+                ),
+              ],
             ),
           ),
         ),
         data: (user) {
           if (user == null) {
-            return const Center(child: CircularProgressIndicator());
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 380),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.person_search_rounded,
+                        size: 56,
+                        color: AppColors.emerald,
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Seu perfil ainda não foi inicializado no servidor.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _idSyncError ??
+                            'Toque abaixo para criar seus dados de perfil e gerar seu ID exclusivo.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: _idSyncError != null
+                              ? Theme.of(context).colorScheme.error
+                              : secondaryText,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: _isSyncingId ? null : _syncOrGenerateId,
+                        icon: _isSyncingId
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.auto_fix_high_rounded),
+                        label: Text(
+                          _isSyncingId
+                              ? 'Sincronizando...'
+                              : 'Concluir perfil e gerar ID',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
           }
+
           _syncInitialValues(user);
+          final hasPublicId = user.publicId.trim().isNotEmpty;
 
           return SafeArea(
             child: SingleChildScrollView(
@@ -303,38 +427,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               .bodySmall
                               ?.copyWith(color: secondaryText),
                         ),
-                        if (user.publicId.isNotEmpty) ...[
-                          const SizedBox(height: 20),
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.qr_code_2_rounded,
-                                        size: 20,
-                                        color: isDark
-                                            ? AppColors.emeraldBright
-                                            : AppColors.emeraldDark,
+                        const SizedBox(height: 20),
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.qr_code_2_rounded,
+                                      size: 20,
+                                      color: isDark
+                                          ? AppColors.emeraldBright
+                                          : AppColors.emeraldDark,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Seu ID exclusivo e @usuário',
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: secondaryText,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Seu ID exclusivo',
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: secondaryText,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                if (hasPublicId) ...[
                                   SelectableText(
                                     user.publicId,
                                     style: Theme.of(context)
@@ -347,7 +471,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Compartilhe este código para que outras pessoas adicionem você sem precisar do seu e-mail.',
+                                    '@${user.username}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? AppColors.emeraldBright
+                                          : AppColors.emeraldDark,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Compartilhe este ID ou seu @usuário para que outras pessoas adicionem você sem precisar do seu e-mail.',
                                     style: TextStyle(
                                       fontSize: 12.5,
                                       color: secondaryText,
@@ -358,19 +492,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     children: [
                                       Expanded(
                                         child: OutlinedButton.icon(
-                                          onPressed: () =>
-                                              _copyPublicId(user.publicId),
+                                          onPressed: () => _copyIdentifier(
+                                            user.publicId,
+                                            'ID',
+                                          ),
                                           icon: const Icon(
                                             Icons.copy_rounded,
                                             size: 18,
                                           ),
-                                          label: const Text('Copiar'),
+                                          label: const Text('Copiar ID'),
                                         ),
                                       ),
                                       const SizedBox(width: 10),
                                       Expanded(
                                         child: FilledButton.tonalIcon(
-                                          onPressed: () => _sharePublicId(user),
+                                          onPressed: () =>
+                                              _shareIdentifiers(user),
                                           icon: const Icon(
                                             Icons.share_rounded,
                                             size: 18,
@@ -380,11 +517,77 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       ),
                                     ],
                                   ),
+                                ] else ...[
+                                  SelectableText(
+                                    '@${user.username}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _idSyncError ??
+                                        'Seu código ZP-... ainda não foi gravado no servidor. Enquanto isso, outras pessoas podem adicionar você usando @${user.username}.',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: _idSyncError != null
+                                          ? Theme.of(context).colorScheme.error
+                                          : secondaryText,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: FilledButton.icon(
+                                          onPressed: _isSyncingId
+                                              ? null
+                                              : _syncOrGenerateId,
+                                          icon: _isSyncingId
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    color: Colors.white,
+                                                  ),
+                                                )
+                                              : const Icon(
+                                                  Icons.auto_fix_high_rounded,
+                                                  size: 18,
+                                                ),
+                                          label: Text(
+                                            _isSyncingId
+                                                ? 'Gerando...'
+                                                : 'Gerar meu ID',
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: () => _copyIdentifier(
+                                            '@${user.username}',
+                                            '@usuário',
+                                          ),
+                                          icon: const Icon(
+                                            Icons.copy_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text('Copiar @'),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ],
-                              ),
+                              ],
                             ),
                           ),
-                        ],
+                        ),
                         const SizedBox(height: 20),
                         ZapiTextField(
                           controller: _nameController,

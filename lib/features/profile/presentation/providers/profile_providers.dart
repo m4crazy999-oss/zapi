@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/utils/firebase_error_mapper.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/profile_repository.dart';
@@ -34,6 +35,24 @@ class ProfileController extends AsyncNotifier<void> {
   @override
   FutureOr<void> build() {}
 
+  Future<void> syncAccountAndGenerateId() async {
+    state = const AsyncLoading();
+    try {
+      await ref
+          .read(authRepositoryProvider)
+          .migrateAccountPrivacyIfNeeded(force: true, rethrowOnError: true);
+      if (ref.mounted) {
+        state = const AsyncData(null);
+      }
+    } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
+      if (ref.mounted) {
+        state = AsyncError(mapped, stackTrace);
+      }
+      throw mapped;
+    }
+  }
+
   Future<void> updateProfile({
     required String displayName,
     required String username,
@@ -54,10 +73,11 @@ class ProfileController extends AsyncNotifier<void> {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
     }
   }
 
@@ -75,10 +95,11 @@ class ProfileController extends AsyncNotifier<void> {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
     }
   }
 
@@ -93,10 +114,11 @@ class ProfileController extends AsyncNotifier<void> {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
     }
   }
 }

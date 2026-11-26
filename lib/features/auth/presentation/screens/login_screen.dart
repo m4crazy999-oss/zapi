@@ -21,6 +21,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _submitting = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -33,6 +35,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+    });
+
     try {
       await ref.read(authControllerProvider.notifier).signIn(
             email: _emailController.text,
@@ -40,19 +47,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           );
     } on AppException catch (e) {
       if (!mounted) return;
+      setState(() => _errorMessage = e.message);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.message),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    } catch (_) {
+      if (!mounted) return;
+      const msg = 'Não foi possível entrar agora. Tente novamente.';
+      setState(() => _errorMessage = msg);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(msg),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authControllerProvider);
-    final isLoading = authState.isLoading;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
@@ -86,6 +106,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                     ),
                     const SizedBox(height: 16),
+                    if (_errorMessage != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .error
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .error
+                                .withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     ZapiTextField(
                       controller: _emailController,
                       label: 'E-mail',
@@ -93,7 +140,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       prefixIcon: Icons.email_outlined,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
-                      enabled: !isLoading,
+                      enabled: !_submitting,
                       validator: Validators.validateEmail,
                       autofillHints: const [AutofillHints.email],
                     ),
@@ -104,7 +151,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       prefixIcon: Icons.lock_outline_rounded,
                       obscureText: true,
                       textInputAction: TextInputAction.done,
-                      enabled: !isLoading,
+                      enabled: !_submitting,
                       validator: Validators.validatePassword,
                       onFieldSubmitted: (_) => _submit(),
                       autofillHints: const [AutofillHints.password],
@@ -112,7 +159,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: isLoading
+                        onPressed: _submitting
                             ? null
                             : () => context.push('/forgot-password'),
                         child: const Text('Esqueci a senha'),
@@ -120,8 +167,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     FilledButton(
-                      onPressed: isLoading ? null : _submit,
-                      child: isLoading
+                      onPressed: _submitting ? null : _submit,
+                      child: _submitting
                           ? const SizedBox(
                               width: 22,
                               height: 22,
@@ -141,8 +188,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           style: TextStyle(color: secondaryText),
                         ),
                         TextButton(
-                          onPressed:
-                              isLoading ? null : () => context.push('/register'),
+                          onPressed: _submitting
+                              ? null
+                              : () => context.push('/register'),
                           child: const Text('Criar conta'),
                         ),
                       ],

@@ -31,7 +31,10 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _handleAuthChange(ref.read(authStateProvider));
+      _handleAuthChange(
+        ref.read(authStateProvider),
+        ref.read(authRedirectHoldProvider),
+      );
     });
   }
 
@@ -48,7 +51,8 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       presence.setAppForeground(true);
       notifications.setAppForeground(true);
-      if (ref.read(firebaseAuthProvider).currentUser != null) {
+      if (ref.read(firebaseAuthProvider).currentUser != null &&
+          !ref.read(authRedirectHoldProvider)) {
         unawaited(_checkForUpdatesIfNeeded());
       }
     } else if (state == AppLifecycleState.paused ||
@@ -60,7 +64,9 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
     }
   }
 
-  void _handleAuthChange(AsyncValue<User?> next) {
+  void _handleAuthChange(AsyncValue<User?> next, bool holdRedirect) {
+    if (holdRedirect) return;
+
     final user = next.value;
     if (user != null) {
       if (_activeSessionUid == user.uid) return;
@@ -110,7 +116,19 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
 
     ref.listen<AsyncValue<User?>>(
       authStateProvider,
-      (_, next) => _handleAuthChange(next),
+      (_, next) => _handleAuthChange(
+        next,
+        ref.read(authRedirectHoldProvider),
+      ),
+    );
+
+    ref.listen<bool>(
+      authRedirectHoldProvider,
+      (_, holdRedirect) {
+        if (!holdRedirect) {
+          _handleAuthChange(ref.read(authStateProvider), false);
+        }
+      },
     );
 
     return MaterialApp.router(

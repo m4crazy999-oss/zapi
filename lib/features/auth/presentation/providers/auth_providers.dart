@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/media_cache_service.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/presence_service.dart';
+import '../../../../core/utils/firebase_error_mapper.dart';
 import '../../data/auth_repository.dart';
 
 final firebaseAuthProvider = Provider<FirebaseAuth>(
@@ -28,6 +29,22 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authRepositoryProvider).authStateChanges();
 });
 
+/// Mantém o redirecionamento do GoRouter pausado durante cadastro/exclusão
+/// para que falhas no Firestore não redirecionem o usuário antes de exibir o erro.
+class AuthRedirectHoldNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setHold(bool value) {
+    state = value;
+  }
+}
+
+final authRedirectHoldProvider =
+    NotifierProvider<AuthRedirectHoldNotifier, bool>(
+  AuthRedirectHoldNotifier.new,
+);
+
 class AuthController extends AsyncNotifier<void> {
   @override
   FutureOr<void> build() {}
@@ -46,10 +63,11 @@ class AuthController extends AsyncNotifier<void> {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
     }
   }
 
@@ -60,6 +78,7 @@ class AuthController extends AsyncNotifier<void> {
     required String password,
   }) async {
     state = const AsyncLoading();
+    ref.read(authRedirectHoldProvider.notifier).setHold(true);
     try {
       await ref.read(authRepositoryProvider).registerWithEmail(
             displayName: displayName,
@@ -71,10 +90,15 @@ class AuthController extends AsyncNotifier<void> {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
+    } finally {
+      if (ref.mounted) {
+        ref.read(authRedirectHoldProvider.notifier).setHold(false);
+      }
     }
   }
 
@@ -86,10 +110,33 @@ class AuthController extends AsyncNotifier<void> {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
+    }
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    state = const AsyncLoading();
+    try {
+      await ref.read(authRepositoryProvider).changePassword(
+            currentPassword: currentPassword,
+            newPassword: newPassword,
+          );
+      if (ref.mounted) {
+        state = const AsyncData(null);
+      }
+    } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
+      if (ref.mounted) {
+        state = AsyncError(mapped, stackTrace);
+      }
+      throw mapped;
     }
   }
 
@@ -97,43 +144,65 @@ class AuthController extends AsyncNotifier<void> {
     state = const AsyncLoading();
     try {
       final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
-      await ref.read(notificationServiceProvider).clearSession();
+      try {
+        await ref.read(notificationServiceProvider).clearSession();
+      } catch (_) {}
       if (uid != null) {
-        await ref.read(presenceServiceProvider).markOfflineBeforeSignOut(uid);
+        try {
+          await ref
+              .read(presenceServiceProvider)
+              .markOfflineBeforeSignOut(uid);
+        } catch (_) {}
       }
-      await ref.read(mediaCacheServiceProvider).clearAllCache();
+      try {
+        await ref.read(mediaCacheServiceProvider).clearAllCache();
+      } catch (_) {}
       await ref.read(authRepositoryProvider).signOut();
       if (ref.mounted) {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
     }
   }
 
   Future<void> deleteAccount(String currentPassword) async {
     state = const AsyncLoading();
     try {
+      final repo = ref.read(authRepositoryProvider);
+      await repo.reauthenticateForDeletion(currentPassword: currentPassword);
+
       final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
-      await ref.read(notificationServiceProvider).clearSession();
+      try {
+        await ref.read(notificationServiceProvider).clearSession();
+      } catch (_) {}
       if (uid != null) {
-        await ref.read(presenceServiceProvider).markOfflineBeforeSignOut(uid);
+        try {
+          await ref
+              .read(presenceServiceProvider)
+              .markOfflineBeforeSignOut(uid);
+        } catch (_) {}
       }
-      await ref
-          .read(authRepositoryProvider)
-          .deleteAccount(currentPassword: currentPassword);
-      await ref.read(mediaCacheServiceProvider).clearAllCache();
+
+      await repo.deleteAccountDataAndAuth();
+
+      try {
+        await ref.read(mediaCacheServiceProvider).clearAllCache();
+      } catch (_) {}
+
       if (ref.mounted) {
         state = const AsyncData(null);
       }
     } catch (error, stackTrace) {
+      final mapped = FirebaseErrorMapper.map(error);
       if (ref.mounted) {
-        state = AsyncError(error, stackTrace);
+        state = AsyncError(mapped, stackTrace);
       }
-      rethrow;
+      throw mapped;
     }
   }
 }

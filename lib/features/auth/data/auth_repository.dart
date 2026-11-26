@@ -18,6 +18,20 @@ class AuthRepository {
   final FirebaseFirestore _firestore;
   final Set<String> _migratedUids = <String>{};
 
+  static const Set<String> _allowedPublicUserFields = <String>{
+    'uid',
+    'displayName',
+    'username',
+    'publicId',
+    'photoBase64',
+    'photoUrl',
+    'about',
+    'createdAt',
+    'lastSeen',
+    'blockedUids',
+    'activeChatId',
+  };
+
   Stream<User?> authStateChanges() => _auth.authStateChanges();
 
   User? get currentUser => _auth.currentUser;
@@ -60,93 +74,132 @@ class AuthRepository {
       }
 
       try {
-        final usernameRef = _firestore
-            .collection(AppConstants.usernamesCollection)
-            .doc(normalizedUsername);
-        final userRef = _firestore
-            .collection(AppConstants.usersCollection)
-            .doc(user.uid);
-        final privateRef = userRef
-            .collection(AppConstants.privateSubcollection)
-            .doc(AppConstants.privateAccountDoc);
-
-        const maxAttempts = 5;
-        var completed = false;
-
-        for (var attempt = 0; attempt < maxAttempts; attempt++) {
-          final candidatePublicId = PublicIdHelper.generate();
-          final publicIdRef = _firestore
-              .collection(AppConstants.publicIdsCollection)
-              .doc(candidatePublicId);
-
-          final collided = await _firestore.runTransaction<bool>((transaction) async {
-            final usernameSnap = await transaction.get(usernameRef);
-            if (usernameSnap.exists) {
-              throw const AppException(
-                'Este @usuário já está em uso. Escolha outro.',
-              );
-            }
-
-            final publicIdSnap = await transaction.get(publicIdRef);
-            if (publicIdSnap.exists) {
-              return true;
-            }
-
-            transaction.set(usernameRef, {
-              'uid': user.uid,
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-
-            transaction.set(publicIdRef, {
-              'uid': user.uid,
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-
-            transaction.set(userRef, {
-              'uid': user.uid,
-              'displayName': cleanName,
-              'username': normalizedUsername,
-              'publicId': candidatePublicId,
-              'photoBase64': null,
-              'photoUrl': null,
-              'about': AppConstants.defaultAbout,
-              'createdAt': FieldValue.serverTimestamp(),
-              'lastSeen': FieldValue.serverTimestamp(),
-              'blockedUids': <String>[],
-              'activeChatId': null,
-            });
-
-            transaction.set(privateRef, {
-              'email': normalizedEmail,
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-
-            return false;
-          });
-
-          if (!collided) {
-            completed = true;
-            break;
-          }
-        }
-
-        if (!completed) {
-          throw const AppException(
-            'Não foi possível concluir o cadastro agora. Tente novamente.',
-          );
-        }
-
+        await _createInitialUserDocuments(
+          user: user,
+          displayName: cleanName,
+          username: normalizedUsername,
+          email: normalizedEmail,
+        );
         _migratedUids.add(user.uid);
-        await user.updateDisplayName(cleanName);
+        try {
+          await user.updateDisplayName(cleanName);
+        } catch (_) {}
       } catch (innerError) {
-        // Evita conta órfã caso a reserva inicial de perfil falhe.
+        // Evita conta órfã caso a reserva inicial de perfil no Firestore falhe.
         try {
           await user.delete();
-        } catch (_) {}
+        } catch (_) {
+          try {
+            await _auth.signOut();
+          } catch (_) {}
+        }
         rethrow;
       }
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
+    }
+  }
+
+  Future<void> _createInitialUserDocuments({
+    required User user,
+    required String displayName,
+    required String username,
+    required String email,
+    bool fallbackUsernameOnConflict = false,
+  }) async {
+    final userRef = _firestore
+        .collection(AppConstants.usersCollection)
+        .doc(user.uid);
+    final privateRef = userRef
+        .collection(AppConstants.privateSubcollection)
+        .doc(AppConstants.privateAccountDoc);
+
+    const maxAttempts = 5;
+    var candidateUsername = username;
+    var completed = false;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final usernameRef = _firestore
+          .collection(AppConstants.usernamesCollection)
+          .doc(candidateUsername);
+      final candidatePublicId = PublicIdHelper.generate();
+      final publicIdRef = _firestore
+          .collection(AppConstants.publicIdsCollection)
+          .doc(candidatePublicId);
+
+      final outcome = await _firestore.runTransaction<String>((transaction) async {
+        final existingUserSnap = await transaction.get(userRef);
+        if (existingUserSnap.exists) {
+          return 'already_exists';
+        }
+
+        final usernameSnap = await transaction.get(usernameRef);
+        if (usernameSnap.exists) {
+          if (fallbackUsernameOnConflict) {
+            return 'username_collision';
+          }
+          throw const AppException(
+            'Este @usuário já está em uso. Escolha outro.',
+          );
+        }
+
+        final publicIdSnap = await transaction.get(publicIdRef);
+        if (publicIdSnap.exists) {
+          return 'public_id_collision';
+        }
+
+        transaction.set(usernameRef, {
+          'uid': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        transaction.set(publicIdRef, {
+          'uid': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        transaction.set(userRef, {
+          'uid': user.uid,
+          'displayName': displayName,
+          'username': candidateUsername,
+          'publicId': candidatePublicId,
+          'photoBase64': null,
+          'photoUrl': null,
+          'about': AppConstants.defaultAbout,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastSeen': FieldValue.serverTimestamp(),
+          'blockedUids': <String>[],
+          'activeChatId': null,
+        });
+
+        if (email.isNotEmpty) {
+          transaction.set(privateRef, {
+            'email': email,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        return 'ok';
+      });
+
+      if (outcome == 'ok' || outcome == 'already_exists') {
+        completed = true;
+        break;
+      }
+      if (outcome == 'username_collision') {
+        final suffix = PublicIdHelper.generate()
+            .replaceAll('ZP-', '')
+            .substring(0, 4)
+            .toLowerCase();
+        candidateUsername =
+            'zapi_${user.uid.substring(0, 6).toLowerCase()}_$suffix';
+      }
+    }
+
+    if (!completed) {
+      throw const AppException(
+        'Não foi possível concluir o cadastro agora. Tente novamente.',
+      );
     }
   }
 
@@ -161,19 +214,28 @@ class AuthRepository {
         password: password,
       );
 
-      await migrateAccountPrivacyIfNeeded();
+      await migrateAccountPrivacyIfNeeded(rethrowOnError: false);
       await updateLastSeen();
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
     }
   }
 
-  /// Migra contas antigas removendo e-mail/busca por e-mail dos documentos públicos,
-  /// salvando o e-mail somente no documento privado do dono e gerando ID público único.
-  Future<void> migrateAccountPrivacyIfNeeded() async {
+  String _fallbackUsernameForUid(String uid) {
+    final clean = uid.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final prefix = clean.length >= 8 ? clean.substring(0, 8) : clean;
+    return 'zapi_$prefix';
+  }
+
+  /// Migra contas antigas ou recupera perfis incompletos, garantindo ID público único
+  /// (ZP-XXXXXXXX) e mantendo o e-mail apenas no documento privado do dono.
+  Future<void> migrateAccountPrivacyIfNeeded({
+    bool force = false,
+    bool rethrowOnError = false,
+  }) async {
     final user = _auth.currentUser;
     if (user == null) return;
-    if (_migratedUids.contains(user.uid)) return;
+    if (!force && _migratedUids.contains(user.uid)) return;
 
     try {
       final userRef = _firestore
@@ -184,47 +246,81 @@ class AuthRepository {
           .doc(AppConstants.privateAccountDoc);
 
       final userSnap = await userRef.get();
-      if (!userSnap.exists) return;
-
-      final userData = userSnap.data() ?? <String, dynamic>{};
-      final username = (userData['username'] as String?) ?? '';
-      final privateSnap = await privateRef.get();
-
-      DocumentReference<Map<String, dynamic>>? usernameRef;
-      DocumentSnapshot<Map<String, dynamic>>? usernameSnap;
-      if (username.isNotEmpty) {
-        usernameRef = _firestore
-            .collection(AppConstants.usernamesCollection)
-            .doc(username);
-        usernameSnap = await usernameRef.get();
-      }
-
-      final hasLegacyEmail = userData.containsKey('email');
-      final hasLegacyAllowEmailSearch = userData.containsKey('allowEmailSearch');
-      final existingPublicId = (userData['publicId'] as String?) ?? '';
-      final needsPublicId = !PublicIdHelper.isValid(existingPublicId);
-      final needsPrivateDoc = !privateSnap.exists;
-      final needsUsernameClean = usernameSnap != null &&
-          usernameSnap.exists &&
-          (usernameSnap.data()?.containsKey('email') ?? false);
-
-      if (!hasLegacyEmail &&
-          !hasLegacyAllowEmailSearch &&
-          !needsPublicId &&
-          !needsPrivateDoc &&
-          !needsUsernameClean) {
+      if (!userSnap.exists) {
+        final rawName = (user.displayName ?? '').trim();
+        final safeName = rawName.length >= 2 && rawName.length <= 50
+            ? rawName
+            : 'Usuário Zapi';
+        final safeEmail = (user.email ?? '').trim().toLowerCase();
+        await _createInitialUserDocuments(
+          user: user,
+          displayName: safeName,
+          username: _fallbackUsernameForUid(user.uid),
+          email: safeEmail,
+          fallbackUsernameOnConflict: true,
+        );
         _migratedUids.add(user.uid);
         return;
       }
 
-      final resolvedEmail = (privateSnap.data()?['email'] as String?) ??
-          (userData['email'] as String?) ??
-          user.email ??
-          '';
+      final userData = userSnap.data() ?? <String, dynamic>{};
+      final rawUsername = (userData['username'] as String?) ?? '';
+      final normalizedUsername = Validators.validateUsername(rawUsername) == null
+          ? Validators.normalizeUsername(rawUsername)
+          : _fallbackUsernameForUid(user.uid);
+
+      final privateSnap = await privateRef.get();
+
+      final usernameRef = _firestore
+          .collection(AppConstants.usernamesCollection)
+          .doc(normalizedUsername);
+      final usernameSnap = await usernameRef.get();
+
+      final extraKeys = userData.keys
+          .where((k) => !_allowedPublicUserFields.contains(k))
+          .toList();
+      final existingPublicId = (userData['publicId'] as String?) ?? '';
+      final hasValidPublicId = PublicIdHelper.isValid(existingPublicId);
+      final publicIdRefExisting = hasValidPublicId
+          ? _firestore
+              .collection(AppConstants.publicIdsCollection)
+              .doc(PublicIdHelper.normalize(existingPublicId))
+          : null;
+      final publicIdSnapExisting =
+          publicIdRefExisting != null ? await publicIdRefExisting.get() : null;
+      final needsPublicId = !hasValidPublicId ||
+          (publicIdSnapExisting != null && !publicIdSnapExisting.exists);
+
+      final needsPrivateDoc = !privateSnap.exists;
+      final needsUsernameCreateOrFix = !usernameSnap.exists ||
+          (usernameSnap.data()?.containsKey('email') ?? false);
+      final needsSchemaRepair = !userData.containsKey('createdAt') ||
+          userData['about'] is! String ||
+          userData['displayName'] is! String ||
+          (userData['displayName'] as String).trim().length < 2 ||
+          normalizedUsername != rawUsername;
+
+      if (extraKeys.isEmpty &&
+          !needsPublicId &&
+          !needsPrivateDoc &&
+          !needsUsernameCreateOrFix &&
+          !needsSchemaRepair) {
+        _migratedUids.add(user.uid);
+        return;
+      }
+
+      final resolvedEmail = ((privateSnap.data()?['email'] as String?) ??
+              (userData['email'] as String?) ??
+              user.email ??
+              '')
+          .trim()
+          .toLowerCase();
 
       const maxAttempts = 5;
       for (var attempt = 0; attempt < maxAttempts; attempt++) {
-        final candidateId = needsPublicId ? PublicIdHelper.generate() : existingPublicId;
+        final candidateId = !hasValidPublicId
+            ? PublicIdHelper.generate()
+            : PublicIdHelper.normalize(existingPublicId);
         final publicIdRef = _firestore
             .collection(AppConstants.publicIdsCollection)
             .doc(candidateId);
@@ -235,26 +331,22 @@ class AuthRepository {
           final freshData = freshUserSnap.data() ?? <String, dynamic>{};
 
           final freshPrivateSnap = await transaction.get(privateRef);
-          final freshPublicIdSnap =
-              needsPublicId ? await transaction.get(publicIdRef) : null;
-          final freshUsernameSnap =
-              usernameRef != null ? await transaction.get(usernameRef) : null;
+          final freshPublicIdSnap = await transaction.get(publicIdRef);
+          final freshUsernameSnap = await transaction.get(usernameRef);
 
-          if (needsPublicId &&
-              freshPublicIdSnap != null &&
-              freshPublicIdSnap.exists &&
+          if (freshPublicIdSnap.exists &&
               freshPublicIdSnap.data()?['uid'] != user.uid) {
             return true;
           }
 
           if (!freshPrivateSnap.exists && resolvedEmail.isNotEmpty) {
             transaction.set(privateRef, {
-              'email': resolvedEmail.trim().toLowerCase(),
+              'email': resolvedEmail,
               'updatedAt': FieldValue.serverTimestamp(),
             });
           }
 
-          if (needsPublicId) {
+          if (!freshPublicIdSnap.exists) {
             transaction.set(publicIdRef, {
               'uid': user.uid,
               'createdAt': FieldValue.serverTimestamp(),
@@ -264,21 +356,41 @@ class AuthRepository {
           final updates = <String, dynamic>{
             'lastSeen': FieldValue.serverTimestamp(),
           };
-          if (freshData.containsKey('email')) {
-            updates['email'] = FieldValue.delete();
+          for (final key in freshData.keys) {
+            if (!_allowedPublicUserFields.contains(key)) {
+              updates[key] = FieldValue.delete();
+            }
           }
-          if (freshData.containsKey('allowEmailSearch')) {
-            updates['allowEmailSearch'] = FieldValue.delete();
+          if (!freshData.containsKey('uid')) {
+            updates['uid'] = user.uid;
           }
-          if (needsPublicId) {
+          if (!freshData.containsKey('createdAt')) {
+            updates['createdAt'] = FieldValue.serverTimestamp();
+          }
+          if (freshData['about'] is! String) {
+            updates['about'] = AppConstants.defaultAbout;
+          }
+          final freshDisplayName = (freshData['displayName'] as String?)?.trim() ?? '';
+          if (freshDisplayName.length < 2) {
+            final fallbackName = (user.displayName ?? '').trim();
+            updates['displayName'] =
+                fallbackName.length >= 2 ? fallbackName : 'Usuário Zapi';
+          }
+          if (!hasValidPublicId) {
             updates['publicId'] = candidateId;
           }
+          if (normalizedUsername != rawUsername) {
+            updates['username'] = normalizedUsername;
+          }
+
           transaction.update(userRef, updates);
 
-          if (usernameRef != null &&
-              freshUsernameSnap != null &&
-              freshUsernameSnap.exists &&
-              (freshUsernameSnap.data()?.containsKey('email') ?? false)) {
+          if (!freshUsernameSnap.exists) {
+            transaction.set(usernameRef, {
+              'uid': user.uid,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          } else if (freshUsernameSnap.data()?.containsKey('email') ?? false) {
             transaction.update(usernameRef, {
               'email': FieldValue.delete(),
             });
@@ -292,8 +404,11 @@ class AuthRepository {
           break;
         }
       }
-    } catch (_) {
-      // Será tentado novamente na próxima abertura de sessão.
+    } catch (error) {
+      if (rethrowOnError) {
+        throw FirebaseErrorMapper.map(error);
+      }
+      // Em carregamento silencioso, será tentado novamente ao abrir o app/perfil.
     }
   }
 
@@ -303,6 +418,50 @@ class AuthRepository {
       await _auth.sendPasswordResetEmail(email: email.trim().toLowerCase());
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
+    }
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AppException('Nenhuma sessão ativa encontrada.');
+    }
+
+    final resolvedEmail = await _resolveCurrentEmail(user);
+    if (resolvedEmail.isEmpty) {
+      throw const AppException(
+        'Não foi possível identificar o e-mail desta conta.',
+      );
+    }
+
+    try {
+      final credential = EmailAuthProvider.credential(
+        email: resolvedEmail,
+        password: currentPassword,
+      );
+      await user.reauthenticateWithCredential(credential);
+      await user.updatePassword(newPassword);
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
+  Future<String> _resolveCurrentEmail(User user) async {
+    final authEmail = (user.email ?? '').trim();
+    if (authEmail.isNotEmpty) return authEmail;
+    try {
+      final privateSnap = await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(user.uid)
+          .collection(AppConstants.privateSubcollection)
+          .doc(AppConstants.privateAccountDoc)
+          .get();
+      return (privateSnap.data()?['email'] as String?)?.trim() ?? '';
+    } catch (_) {
+      return '';
     }
   }
 
@@ -328,58 +487,127 @@ class AuthRepository {
     }
   }
 
-  Future<void> deleteAccount({required String currentPassword}) async {
+  Future<void> reauthenticateForDeletion({
+    required String currentPassword,
+  }) async {
     final user = _auth.currentUser;
-    if (user == null || user.email == null) {
+    if (user == null) {
       throw const AppException('Nenhuma sessão ativa encontrada.');
+    }
+
+    final resolvedEmail = await _resolveCurrentEmail(user);
+    if (resolvedEmail.isEmpty) {
+      throw const AppException(
+        'Não foi possível identificar o e-mail desta conta.',
+      );
     }
 
     try {
       final credential = EmailAuthProvider.credential(
-        email: user.email!,
+        email: resolvedEmail,
         password: currentPassword,
       );
       await user.reauthenticateWithCredential(credential);
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
 
+  Future<void> deleteAccountDataAndAuth() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AppException('Nenhuma sessão ativa encontrada.');
+    }
+
+    try {
       final userRef = _firestore
           .collection(AppConstants.usersCollection)
           .doc(user.uid);
       final userSnap = await userRef.get();
       final userData = userSnap.data() ?? <String, dynamic>{};
-      final username = userData['username'] as String?;
-      final publicId = userData['publicId'] as String?;
+      final username = (userData['username'] as String?)?.trim();
+      final publicId = (userData['publicId'] as String?)?.trim();
 
-      final contactsSnap =
-          await userRef.collection(AppConstants.contactsSubcollection).get();
-      final stickersSnap =
-          await userRef.collection(AppConstants.stickersSubcollection).get();
+      final refsToDelete = <DocumentReference<Map<String, dynamic>>>[];
+
+      try {
+        final contactsSnap =
+            await userRef.collection(AppConstants.contactsSubcollection).get();
+        for (final doc in contactsSnap.docs) {
+          refsToDelete.add(doc.reference);
+        }
+      } catch (_) {}
+
+      try {
+        final stickersSnap =
+            await userRef.collection(AppConstants.stickersSubcollection).get();
+        for (final doc in stickersSnap.docs) {
+          refsToDelete.add(doc.reference);
+        }
+      } catch (_) {}
+
       final privateRef = userRef
           .collection(AppConstants.privateSubcollection)
           .doc(AppConstants.privateAccountDoc);
-
-      final batch = _firestore.batch();
-      for (final doc in contactsSnap.docs) {
-        batch.delete(doc.reference);
-      }
-      for (final doc in stickersSnap.docs) {
-        batch.delete(doc.reference);
-      }
-      batch.delete(privateRef);
+      try {
+        final privateSnap = await privateRef.get();
+        if (privateSnap.exists) {
+          refsToDelete.add(privateRef);
+        }
+      } catch (_) {}
 
       if (username != null && username.isNotEmpty) {
         final usernameRef = _firestore
             .collection(AppConstants.usernamesCollection)
             .doc(username);
-        batch.delete(usernameRef);
+        try {
+          final usernameSnap = await usernameRef.get();
+          if (usernameSnap.exists &&
+              usernameSnap.data()?['uid'] == user.uid) {
+            refsToDelete.add(usernameRef);
+          }
+        } catch (_) {}
       }
+
       if (publicId != null && PublicIdHelper.isValid(publicId)) {
         final publicIdRef = _firestore
             .collection(AppConstants.publicIdsCollection)
-            .doc(publicId);
-        batch.delete(publicIdRef);
+            .doc(PublicIdHelper.normalize(publicId));
+        try {
+          final publicIdSnap = await publicIdRef.get();
+          if (publicIdSnap.exists &&
+              publicIdSnap.data()?['uid'] == user.uid) {
+            refsToDelete.add(publicIdRef);
+          }
+        } catch (_) {}
       }
-      batch.delete(userRef);
-      await batch.commit();
+
+      if (userSnap.exists) {
+        refsToDelete.add(userRef);
+      }
+
+      if (refsToDelete.isNotEmpty) {
+        try {
+          const chunkSize = 400;
+          for (var i = 0; i < refsToDelete.length; i += chunkSize) {
+            final batch = _firestore.batch();
+            final end = (i + chunkSize < refsToDelete.length)
+                ? i + chunkSize
+                : refsToDelete.length;
+            for (var j = i; j < end; j++) {
+              batch.delete(refsToDelete[j]);
+            }
+            await batch.commit();
+          }
+        } catch (_) {
+          // Caso alguma subcoleção falhe por regras antigas, garante a remoção individual dos documentos principais.
+          for (final ref in refsToDelete) {
+            try {
+              await ref.delete();
+            } catch (_) {}
+          }
+        }
+      }
 
       _migratedUids.remove(user.uid);
       await user.delete();

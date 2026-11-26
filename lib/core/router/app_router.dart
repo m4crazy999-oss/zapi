@@ -23,17 +23,23 @@ final rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
-    _subscription = ref.listen<AsyncValue<User?>>(
+    _authSub = ref.listen<AsyncValue<User?>>(
       authStateProvider,
+      (_, __) => notifyListeners(),
+    );
+    _holdSub = ref.listen<bool>(
+      authRedirectHoldProvider,
       (_, __) => notifyListeners(),
     );
   }
 
-  late final ProviderSubscription<AsyncValue<User?>> _subscription;
+  late final ProviderSubscription<AsyncValue<User?>> _authSub;
+  late final ProviderSubscription<bool> _holdSub;
 
   @override
   void dispose() {
-    _subscription.close();
+    _authSub.close();
+    _holdSub.close();
     super.dispose();
   }
 }
@@ -48,7 +54,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
       final authAsync = ref.read(authStateProvider);
+      final holdRedirect = ref.read(authRedirectHoldProvider);
       final location = state.matchedLocation;
+
+      if (holdRedirect) {
+        return null;
+      }
 
       if (authAsync.isLoading) {
         return location == '/splash' ? null : '/splash';
@@ -56,15 +67,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       final user = authAsync.value;
       final isLoggedIn = user != null;
-      final isAuthRoute = location == '/login' ||
-          location == '/register' ||
-          location == '/forgot-password';
+      final isAuthOnlyRoute = location == '/login' || location == '/register';
+      final isPublicAuthRoute = isAuthOnlyRoute || location == '/forgot-password';
 
       if (!isLoggedIn) {
-        return isAuthRoute ? null : '/login';
+        return isPublicAuthRoute ? null : '/login';
       }
 
-      if (location == '/splash' || isAuthRoute) {
+      if (location == '/splash' || isAuthOnlyRoute) {
         return '/chats';
       }
 

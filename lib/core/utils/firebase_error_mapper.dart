@@ -27,13 +27,17 @@ class FirebaseErrorMapper {
           return const AppException(
             'O endereço de e-mail informado não é válido.',
           );
+        case 'missing-email':
+          return const AppException(
+            'Informe o e-mail da sua conta para continuar.',
+          );
         case 'weak-password':
           return const AppException(
             'A senha é muito fraca. Use pelo menos 6 caracteres.',
           );
         case 'user-not-found':
           return const AppException(
-            'Nenhuma conta encontrada com essas credenciais.',
+            'Nenhuma conta encontrada com esse e-mail.',
           );
         case 'wrong-password':
         case 'invalid-credential':
@@ -43,6 +47,10 @@ class FirebaseErrorMapper {
         case 'user-disabled':
           return const AppException(
             'Esta conta foi desativada.',
+          );
+        case 'operation-not-allowed':
+          return const AppException(
+            'O método de login por e-mail/senha não está ativado no Firebase Authentication.',
           );
         case 'too-many-requests':
           return const AppException(
@@ -56,9 +64,18 @@ class FirebaseErrorMapper {
           return const AppException(
             'Por segurança, confirme sua senha atual para concluir esta ação.',
           );
-        default:
+        case 'expired-action-code':
+        case 'invalid-action-code':
           return const AppException(
-            'Não foi possível entrar agora. Tente novamente.',
+            'O link de verificação expirou ou já foi utilizado. Solicite um novo.',
+          );
+        case 'invalid-recipient-email':
+          return const AppException(
+            'Não foi possível enviar para este endereço de e-mail.',
+          );
+        default:
+          return AppException(
+            'Não foi possível concluir a autenticação (${error.code}). Tente novamente.',
           );
       }
     }
@@ -73,7 +90,7 @@ class FirebaseErrorMapper {
         case 'permission-denied':
         case 'unauthorized':
           return const AppException(
-            'Você não tem permissão para realizar esta operação.',
+            'Permissão negada no Firestore. Verifique se o arquivo firestore.rules atualizado foi publicado no Firebase Console.',
           );
         case 'object-not-found':
         case 'not-found':
@@ -83,8 +100,8 @@ class FirebaseErrorMapper {
         case 'canceled':
           return const AppException('Operação cancelada.');
         default:
-          return const AppException(
-            'Não foi possível concluir esta ação. Tente novamente.',
+          return AppException(
+            'Não foi possível concluir esta ação (${error.code}). Tente novamente.',
           );
       }
     }

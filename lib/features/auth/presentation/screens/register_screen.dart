@@ -23,6 +23,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  bool _submitting = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -38,6 +40,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+    });
+
     try {
       await ref.read(authControllerProvider.notifier).register(
             displayName: _displayNameController.text,
@@ -47,18 +54,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           );
     } on AppException catch (e) {
       if (!mounted) return;
+      setState(() => _errorMessage = e.message);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.message),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    } catch (_) {
+      if (!mounted) return;
+      const msg = 'Não foi possível concluir seu cadastro. Tente novamente.';
+      setState(() => _errorMessage = msg);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(msg),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = ref.watch(authControllerProvider).isLoading;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
@@ -88,13 +109,40 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           ),
                     ),
                     const SizedBox(height: 20),
+                    if (_errorMessage != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .error
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .error
+                                .withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     ZapiTextField(
                       controller: _displayNameController,
                       label: 'Nome de exibição',
                       hint: 'Como seus contatos vão ver você',
                       prefixIcon: Icons.person_outline_rounded,
                       textInputAction: TextInputAction.next,
-                      enabled: !isLoading,
+                      enabled: !_submitting,
                       validator: Validators.validateDisplayName,
                     ),
                     const SizedBox(height: 14),
@@ -105,14 +153,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       prefixText: '@',
                       prefixIcon: Icons.alternate_email_rounded,
                       textInputAction: TextInputAction.next,
-                      enabled: !isLoading,
+                      enabled: !_submitting,
                       validator: Validators.validateUsername,
                     ),
                     const SizedBox(height: 6),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: Text(
-                        'Seu e-mail nunca fica visível para outras pessoas.',
+                        'Ao criar sua conta, você recebe um ID exclusivo (ZP-...) e seu e-mail nunca fica visível para outras pessoas.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: secondaryText,
                             ),
@@ -126,7 +174,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       prefixIcon: Icons.email_outlined,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
-                      enabled: !isLoading,
+                      enabled: !_submitting,
                       validator: Validators.validateEmail,
                     ),
                     const SizedBox(height: 14),
@@ -137,7 +185,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       prefixIcon: Icons.lock_outline_rounded,
                       obscureText: true,
                       textInputAction: TextInputAction.next,
-                      enabled: !isLoading,
+                      enabled: !_submitting,
                       validator: Validators.validatePassword,
                     ),
                     const SizedBox(height: 14),
@@ -147,7 +195,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       prefixIcon: Icons.lock_reset_rounded,
                       obscureText: true,
                       textInputAction: TextInputAction.done,
-                      enabled: !isLoading,
+                      enabled: !_submitting,
                       onFieldSubmitted: (_) => _submit(),
                       validator: (value) {
                         if ((value ?? '').isEmpty) {
@@ -161,8 +209,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
-                      onPressed: isLoading ? null : _submit,
-                      child: isLoading
+                      onPressed: _submitting ? null : _submit,
+                      child: _submitting
                           ? const SizedBox(
                               width: 22,
                               height: 22,
@@ -175,7 +223,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     ),
                     const SizedBox(height: 14),
                     TextButton(
-                      onPressed: isLoading ? null : () => context.pop(),
+                      onPressed: _submitting ? null : () => context.pop(),
                       child: const Text('Já tenho conta. Voltar para o login'),
                     ),
                   ],

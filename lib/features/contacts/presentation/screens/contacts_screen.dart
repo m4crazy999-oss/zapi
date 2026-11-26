@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,6 +9,7 @@ import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../profile/presentation/providers/profile_providers.dart';
 import '../../domain/app_contact.dart';
 import '../providers/contacts_providers.dart';
 
@@ -25,6 +27,15 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _copyIdentifier(String value, String label) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    await HapticFeedback.lightImpact();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label $value copiado!')),
+    );
   }
 
   void _openChat(AppContact contact) {
@@ -157,6 +168,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final myProfile = ref.watch(currentUserProfileProvider).value;
     final contactsAsync = ref.watch(filteredContactsProvider);
     final query = ref.watch(contactsSearchQueryProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -184,7 +196,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: TextField(
               controller: _searchController,
               onChanged: (value) => ref
@@ -207,6 +219,69 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
               ),
             ),
           ),
+          if (myProfile != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Card(
+                margin: EdgeInsets.zero,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => context.push('/profile'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.qr_code_2_rounded,
+                          size: 20,
+                          color: isDark
+                              ? AppColors.emeraldBright
+                              : AppColors.emeraldDark,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                myProfile.publicId.isNotEmpty
+                                    ? 'Meu ID: ${myProfile.publicId}'
+                                    : 'Meu @usuário: @${myProfile.username}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                              if (myProfile.publicId.isNotEmpty)
+                                Text(
+                                  '@${myProfile.username}',
+                                  style: TextStyle(
+                                    color: secondaryText,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _copyIdentifier(
+                            myProfile.publicId.isNotEmpty
+                                ? myProfile.publicId
+                                : '@${myProfile.username}',
+                            myProfile.publicId.isNotEmpty ? 'ID' : '@usuário',
+                          ),
+                          icon: const Icon(Icons.copy_rounded, size: 16),
+                          label: const Text('Copiar'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: contactsAsync.when(
               loading: () => const ZapiListSkeleton(showTimestamp: false),
