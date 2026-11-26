@@ -90,7 +90,7 @@ class ImageHelper {
     }
 
     throw const AppException(
-      'Não foi possível comprimir a foto de perfil abaixo de 100 KB. Escolha outra imagem.',
+      'A foto selecionada é muito grande. Tente escolher outra imagem.',
     );
   }
 }

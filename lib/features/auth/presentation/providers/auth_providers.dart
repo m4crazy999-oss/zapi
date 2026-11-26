@@ -33,13 +33,13 @@ class AuthController extends AsyncNotifier<void> {
   FutureOr<void> build() {}
 
   Future<void> signIn({
-    required String identifier,
+    required String email,
     required String password,
   }) async {
     state = const AsyncLoading();
     try {
-      await ref.read(authRepositoryProvider).signInWithEmailOrUsername(
-            identifier: identifier,
+      await ref.read(authRepositoryProvider).signInWithEmail(
+            email: email,
             password: password,
           );
       if (ref.mounted) {
@@ -91,10 +91,6 @@ class AuthController extends AsyncNotifier<void> {
       }
       rethrow;
     }
-  }
-
-  Future<void> updateAllowEmailSearch(bool enabled) async {
-    await ref.read(authRepositoryProvider).updateAllowEmailSearch(enabled);
   }
 
   Future<void> signOut() async {

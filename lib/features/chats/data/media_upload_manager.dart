@@ -183,7 +183,7 @@ class MediaUploadManager
     if (sizeBytes > AppConstants.maxChatAudioBytes ||
         sizeBytes * 4 > AppConstants.maxFirestoreMediaBase64Chars * 3) {
       throw const AppException(
-        'O áudio ficou grande demais para envio gratuito no Firestore (limite de 3 min / 900 KB). Grave um áudio mais curto.',
+        'O áudio ficou longo demais, grave um menor.',
       );
     }
 
@@ -244,7 +244,7 @@ class MediaUploadManager
     final bytes = base64Decode(rawBase64);
     if (bytes.length > AppConstants.maxStickerBytes) {
       throw const AppException(
-        'A figurinha ultrapassa o limite de 100 KB.',
+        'Não foi possível enviar esta figurinha. Escolha outra.',
       );
     }
 
@@ -322,7 +322,7 @@ class MediaUploadManager
       if (processed.sizeBytes > AppConstants.maxChatImageBytes ||
           mainBase64.length > AppConstants.maxFirestoreMediaBase64Chars) {
         throw const AppException(
-          'A foto ultrapassou o limite de tamanho para o Firestore gratuito mesmo após compressão.',
+          'A foto é muito grande, tente escolher outra.',
         );
       }
 
@@ -397,7 +397,7 @@ class MediaUploadManager
       if (bytes.length > AppConstants.maxChatAudioBytes ||
           audioBase64.length > AppConstants.maxFirestoreMediaBase64Chars) {
         throw const AppException(
-          'O áudio ultrapassou o limite suportado pelo plano gratuito. Grave um áudio um pouco menor.',
+          'O áudio ficou longo demais, grave um menor.',
         );
       }
 

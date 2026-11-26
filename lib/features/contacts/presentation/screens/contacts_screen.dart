@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/chat_id_helper.dart';
+import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../domain/app_contact.dart';
@@ -208,7 +209,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           ),
           Expanded(
             child: contactsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const ZapiListSkeleton(showTimestamp: false),
               error: (_, __) => Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
@@ -254,7 +255,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           Text(
                             query.isNotEmpty
                                 ? 'Tente buscar por outro nome ou @usuário.'
-                                : 'Adicione amigos pelo @usuário ou e-mail para começar a conversar em tempo real.',
+                                : 'Adicione amigos usando o @usuário ou o ID exclusivo para começar a conversar.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: secondaryText),
                           ),

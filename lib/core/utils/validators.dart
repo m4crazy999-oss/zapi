@@ -1,4 +1,5 @@
 import '../constants/app_constants.dart';
+import 'public_id_helper.dart';
 
 class Validators {
   Validators._();
@@ -49,6 +50,20 @@ class Validators {
     return null;
   }
 
+  static String? validateContactLookup(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) {
+      return 'Digite um @usuário ou ID Zapi para buscar.';
+    }
+    if (PublicIdHelper.looksLikePublicId(trimmed)) {
+      if (!PublicIdHelper.isValid(trimmed)) {
+        return 'ID inválido. Exemplo: ZP-4K8M9P2X.';
+      }
+      return null;
+    }
+    return validateUsername(trimmed);
+  }
+
   static String? validateEmail(String? value) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) {
@@ -56,21 +71,6 @@ class Validators {
     }
     if (!_emailRegex.hasMatch(text)) {
       return 'Digite um endereço de e-mail válido.';
-    }
-    return null;
-  }
-
-  static String? validateLoginIdentifier(String? value) {
-    final text = value?.trim() ?? '';
-    if (text.isEmpty) {
-      return 'Informe seu e-mail ou @usuário.';
-    }
-    if (isEmailFormat(text)) {
-      return null;
-    }
-    final normalized = normalizeUsername(text);
-    if (!_usernameRegex.hasMatch(normalized)) {
-      return 'Digite um e-mail válido ou um @usuário válido (mín. 3 caracteres).';
     }
     return null;
   }

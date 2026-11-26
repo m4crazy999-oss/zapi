@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -197,6 +199,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Future<void> _copyPublicId(String publicId) async {
+    await Clipboard.setData(ClipboardData(text: publicId));
+    await HapticFeedback.lightImpact();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('ID $publicId copiado!')),
+    );
+  }
+
+  Future<void> _sharePublicId(AppUser user) async {
+    await Share.share(
+      'Me adicione no Zapi!\nMeu ID: ${user.publicId}\nMeu @usuário: @${user.username}',
+    );
+  }
+
   Future<void> _saveProfile() async {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
@@ -226,6 +243,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(currentUserProfileProvider);
+    final privateEmail = ref.watch(privateAccountEmailProvider).value ??
+        ref.watch(firebaseAuthProvider).currentUser?.email ??
+        '';
     final profileMutation = ref.watch(profileControllerProvider);
     final isSaving = profileMutation.isLoading && !_isUploadingPhoto;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -276,14 +296,96 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Toque na foto para alterar (máx. 256×256 · até 100 KB)',
+                          'Toque na foto para alterar',
                           textAlign: TextAlign.center,
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
                               ?.copyWith(color: secondaryText),
                         ),
-                        const SizedBox(height: 28),
+                        if (user.publicId.isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.qr_code_2_rounded,
+                                        size: 20,
+                                        color: isDark
+                                            ? AppColors.emeraldBright
+                                            : AppColors.emeraldDark,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Seu ID exclusivo',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: secondaryText,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  SelectableText(
+                                    user.publicId,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 1.1,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Compartilhe este código para que outras pessoas adicionem você sem precisar do seu e-mail.',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: secondaryText,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed: () =>
+                                              _copyPublicId(user.publicId),
+                                          icon: const Icon(
+                                            Icons.copy_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text('Copiar'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: FilledButton.tonalIcon(
+                                          onPressed: () => _sharePublicId(user),
+                                          icon: const Icon(
+                                            Icons.share_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text('Compartilhar'),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
                         ZapiTextField(
                           controller: _nameController,
                           label: 'Nome de exibição',
@@ -371,9 +473,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         const SizedBox(height: 12),
                         Card(
                           child: ListTile(
-                            leading: const Icon(Icons.email_outlined),
-                            title: const Text('E-mail da conta'),
-                            subtitle: Text(user.email),
+                            leading: const Icon(Icons.lock_outline_rounded),
+                            title: const Text('E-mail privado da conta'),
+                            subtitle: Text(
+                              privateEmail.isNotEmpty
+                                  ? '$privateEmail\nVisível apenas para você'
+                                  : 'Visível apenas para você',
+                            ),
+                            isThreeLine: privateEmail.isNotEmpty,
                           ),
                         ),
                         const SizedBox(height: 24),

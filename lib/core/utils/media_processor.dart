@@ -83,13 +83,13 @@ class MediaProcessor {
         base64Encode(encoded.mainBytes).length >
             AppConstants.maxFirestoreMediaBase64Chars) {
       throw const AppException(
-        'A imagem ainda ultrapassou 700 KB após compressão máxima. Escolha outra foto.',
+        'A foto é muito grande, tente escolher outra.',
       );
     }
 
     if (encoded.thumbBytes.length > AppConstants.maxThumbnailBytes) {
       throw const AppException(
-        'Não foi possível reduzir a miniatura da foto abaixo de 20 KB.',
+        'Não foi possível preparar esta foto. Tente outra imagem.',
       );
     }
 
@@ -163,7 +163,7 @@ class MediaProcessor {
           webpBytes.isEmpty ||
           webpBytes.length > AppConstants.maxStickerBytes) {
         throw const AppException(
-          'A figurinha ultrapassou 100 KB após compressão. Escolha uma imagem mais simples.',
+          'A figurinha ficou pesada demais. Escolha uma foto mais simples.',
         );
       }
 

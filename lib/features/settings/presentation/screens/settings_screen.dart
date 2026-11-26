@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/services/app_update_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_exceptions.dart';
+import '../../../../core/widgets/update_dialog.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../profile/presentation/providers/profile_providers.dart';
@@ -17,14 +19,30 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _updatingPrivacy = false;
+  bool _checkingUpdates = false;
 
-  Future<void> _toggleAllowEmailSearch(bool value) async {
-    setState(() => _updatingPrivacy = true);
+  Future<void> _checkUpdatesManually() async {
+    if (_checkingUpdates) return;
+    setState(() => _checkingUpdates = true);
     try {
-      await ref
-          .read(authControllerProvider.notifier)
-          .updateAllowEmailSearch(value);
+      final service = ref.read(appUpdateServiceProvider);
+      final update = await service.checkForUpdate(force: true);
+      if (!mounted) return;
+
+      if (update == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Você está com a versão mais recente.'),
+          ),
+        );
+        return;
+      }
+
+      await UpdateDialog.show(
+        context,
+        update: update,
+        updateService: service,
+      );
     } on AppException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -35,7 +53,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
     } finally {
       if (mounted) {
-        setState(() => _updatingPrivacy = false);
+        setState(() => _checkingUpdates = false);
       }
     }
   }
@@ -46,7 +64,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Sair da conta'),
         content: const Text(
-          'Você poderá entrar novamente a qualquer momento com seu e-mail ou @usuário.',
+          'Você poderá entrar novamente a qualquer momento com seu e-mail e senha.',
         ),
         actions: [
           TextButton(
@@ -102,6 +120,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(currentUserProfileProvider);
+    final versionLabel =
+        ref.watch(appVersionLabelProvider).value ?? '1.0.0';
     final themeMode = ref.watch(themeModeProvider);
     final isAuthBusy = ref.watch(authControllerProvider).isLoading;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -187,7 +207,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             child: Text(
-              'Privacidade',
+              'Privacidade e avisos',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: secondaryText,
                     fontWeight: FontWeight.w700,
@@ -195,25 +215,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           Card(
-            child: SwitchListTile.adaptive(
-              secondary: const Icon(Icons.alternate_email_rounded),
-              title: const Text('Permitir busca por e-mail'),
-              subtitle: const Text(
-                'Quando ativado, outras pessoas podem encontrar seu perfil pelo seu e-mail para adicionar você aos contatos.',
-              ),
-              value: profileAsync.value?.allowEmailSearch ?? false,
-              onChanged:
-                  _updatingPrivacy ? null : _toggleAllowEmailSearch,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.notifications_active_outlined),
-              title: Text('Notificações locais (Plano Spark gratuito)'),
-              subtitle: Text(
-                'Alertas funcionam enquanto o app estiver aberto ou minimizado em segundo plano. Se o app for encerrado completamente, novas mensagens aparecerão ao reabrir.',
-              ),
+            child: Column(
+              children: const [
+                ListTile(
+                  leading: Icon(Icons.verified_user_outlined),
+                  title: Text('E-mail privado'),
+                  subtitle: Text(
+                    'Seu e-mail é visível apenas para você. Outras pessoas encontram você pelo @usuário ou ID.',
+                  ),
+                ),
+                Divider(height: 1),
+                ListTile(
+                  leading: Icon(Icons.notifications_active_outlined),
+                  title: Text('Notificações'),
+                  subtitle: Text(
+                    'Receba alertas de novas mensagens enquanto estiver usando o Zapi.',
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -275,6 +294,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             child: Text(
+              'Sobre e atualizações',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: secondaryText,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.system_update_outlined),
+              title: const Text('Verificar atualizações'),
+              subtitle: Text('Versão $versionLabel'),
+              trailing: _checkingUpdates
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_right_rounded),
+              onTap: _checkingUpdates ? null : _checkUpdatesManually,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            child: Text(
               'Conta',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: secondaryText,
@@ -288,7 +333,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.person_outline_rounded),
                   title: const Text('Editar perfil'),
-                  subtitle: const Text('Nome, @usuário, recado e foto'),
+                  subtitle: const Text('Nome, @usuário, ID exclusivo e foto'),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => context.push('/profile'),
                 ),
@@ -322,6 +367,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 20),
             const Center(child: CircularProgressIndicator()),
           ],
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -356,7 +402,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Todos os seus dados (perfil, @usuário e foto) serão apagados definitivamente. Digite sua senha atual para confirmar:',
+              'Todos os seus dados (perfil, @usuário, ID e foto) serão apagados definitivamente. Digite sua senha atual para confirmar:',
             ),
             const SizedBox(height: 16),
             TextFormField(

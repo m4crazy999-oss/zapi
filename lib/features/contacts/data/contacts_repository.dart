@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/app_exceptions.dart';
 import '../../../core/utils/firebase_error_mapper.dart';
+import '../../../core/utils/public_id_helper.dart';
 import '../../../core/utils/validators.dart';
 import '../../auth/domain/app_user.dart';
 import '../domain/app_contact.dart';
@@ -38,27 +39,30 @@ class ContactsRepository {
   }) async {
     final trimmed = rawIdentifier.trim();
     if (trimmed.isEmpty) {
-      throw const AppException('Digite um @usuário ou e-mail para buscar.');
+      throw const AppException('Digite um @usuário ou ID para buscar.');
     }
 
     try {
-      AppUser? foundUser;
+      String? targetUid;
 
-      if (Validators.isEmailFormat(trimmed)) {
-        final email = trimmed.toLowerCase();
-        final querySnap = await _firestore
-            .collection(AppConstants.usersCollection)
-            .where('email', isEqualTo: email)
-            .where('allowEmailSearch', isEqualTo: true)
-            .limit(1)
-            .get();
-
-        if (querySnap.docs.isEmpty) {
+      if (PublicIdHelper.looksLikePublicId(trimmed)) {
+        final normalizedId = PublicIdHelper.normalize(trimmed);
+        if (!PublicIdHelper.isValid(normalizedId)) {
           throw const AppException(
-            'Nenhuma conta encontrada com esse e-mail, ou o usuário desativou a busca por e-mail.',
+            'ID inválido. Digite no formato ZP-XXXXXXXX.',
           );
         }
-        foundUser = AppUser.fromFirestore(querySnap.docs.first);
+
+        final idSnap = await _firestore
+            .collection(AppConstants.publicIdsCollection)
+            .doc(normalizedId)
+            .get();
+
+        if (!idSnap.exists) {
+          throw const AppException('Usuário não encontrado.');
+        }
+
+        targetUid = idSnap.data()?['uid'] as String?;
       } else {
         final normalized = Validators.normalizeUsername(trimmed);
         final formatError = Validators.validateUsername(normalized);
@@ -72,28 +76,26 @@ class ContactsRepository {
             .get();
 
         if (!usernameSnap.exists) {
-          throw const AppException(
-            'Nenhum usuário encontrado com esse @usuário.',
-          );
-        }
-
-        final targetUid = usernameSnap.data()?['uid'] as String?;
-        if (targetUid == null || targetUid.isEmpty) {
-          throw const AppException('Perfil de usuário indisponível.');
-        }
-
-        final userSnap = await _firestore
-            .collection(AppConstants.usersCollection)
-            .doc(targetUid)
-            .get();
-
-        if (!userSnap.exists) {
           throw const AppException('Usuário não encontrado.');
         }
 
-        foundUser = AppUser.fromFirestore(userSnap);
+        targetUid = usernameSnap.data()?['uid'] as String?;
       }
 
+      if (targetUid == null || targetUid.isEmpty) {
+        throw const AppException('Usuário não encontrado.');
+      }
+
+      final userSnap = await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(targetUid)
+          .get();
+
+      if (!userSnap.exists) {
+        throw const AppException('Usuário não encontrado.');
+      }
+
+      final foundUser = AppUser.fromFirestore(userSnap);
       if (foundUser.uid == currentUid) {
         throw const AppException(
           'Você não pode adicionar a si mesmo aos contatos.',

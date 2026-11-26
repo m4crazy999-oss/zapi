@@ -105,11 +105,11 @@ def render_zapi_mark(
     cy = size * 0.5
     u = size * scale_ratio
 
-    # Dimensões normalizadas do balão e da letra Z
+    # Dimensões normalizadas do balão e da letra Z (centralizado considerando a cauda)
     hx = 0.34 * u
     hy = 0.28 * u
     br = 0.16 * u
-    bubble_cy = cy - 0.02 * u
+    bubble_cy = cy - 0.06 * u
 
     # Cauda do balão no canto inferior esquerdo
     tx0, ty0 = cx - 0.22 * u, bubble_cy + hy - 0.05 * u
@@ -178,40 +178,40 @@ def main() -> None:
         render_zapi_mark(1024, scale_ratio=0.92, with_background=True, bubble_rgb=white, z_rgb=emerald),
     )
 
-    # 2. Camada foreground do ícone adaptativo (zona segura ~62%)
+    # 2. Camada foreground do ícone adaptativo (zona segura de 62%, <= 66%)
     write_png(
         os.path.join(root_dir, "assets/icon/icon_foreground.png"),
         1024,
         1024,
-        render_zapi_mark(1024, scale_ratio=0.62, with_background=False, bubble_rgb=white, z_rgb=emerald),
+        render_zapi_mark(1024, scale_ratio=0.90, with_background=False, bubble_rgb=white, z_rgb=emerald),
     )
 
-    # 3. Splash claro e escuro (Android < 12)
+    # 3. Splash claro e escuro (Android < 12, marca proporcional centralizada)
     write_png(
         os.path.join(root_dir, "assets/splash/splash_logo.png"),
         512,
         512,
-        render_zapi_mark(512, scale_ratio=0.82, with_background=False, bubble_rgb=emerald, z_rgb=white),
+        render_zapi_mark(512, scale_ratio=0.72, with_background=False, bubble_rgb=emerald, z_rgb=white),
     )
     write_png(
         os.path.join(root_dir, "assets/splash/splash_logo_dark.png"),
         512,
         512,
-        render_zapi_mark(512, scale_ratio=0.82, with_background=False, bubble_rgb=bright_emerald, z_rgb=white),
+        render_zapi_mark(512, scale_ratio=0.72, with_background=False, bubble_rgb=bright_emerald, z_rgb=white),
     )
 
-    # 4. Splash Android 12+ (1152x1152 com padding seguro circular)
+    # 4. Splash Android 12+ (1152x1152 com logo ocupando ~57.8% <= 60% na zona circular segura)
     write_png(
         os.path.join(root_dir, "assets/splash/android12_splash_icon.png"),
         1152,
         1152,
-        render_zapi_mark(1152, scale_ratio=0.58, with_background=False, bubble_rgb=emerald, z_rgb=white),
+        render_zapi_mark(1152, scale_ratio=0.85, with_background=False, bubble_rgb=emerald, z_rgb=white),
     )
     write_png(
         os.path.join(root_dir, "assets/splash/android12_splash_icon_dark.png"),
         1152,
         1152,
-        render_zapi_mark(1152, scale_ratio=0.58, with_background=False, bubble_rgb=bright_emerald, z_rgb=white),
+        render_zapi_mark(1152, scale_ratio=0.85, with_background=False, bubble_rgb=bright_emerald, z_rgb=white),
     )
 
     print("Assets PNG do Zapi gerados com sucesso.")

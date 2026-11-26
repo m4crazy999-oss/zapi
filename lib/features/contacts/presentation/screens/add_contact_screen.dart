@@ -117,7 +117,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Busque pelo @usuário exato ou pelo e-mail (caso a pessoa tenha liberado nas configurações de privacidade).',
+                    'Digite o @usuário exato ou o ID exclusivo (ex.: ZP-4K8M9P2X) para encontrar a pessoa.',
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
@@ -126,10 +126,9 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                   const SizedBox(height: 16),
                   ZapiTextField(
                     controller: _searchController,
-                    label: '@usuário ou e-mail',
-                    hint: 'ex: @ana.paula ou ana@email.com',
+                    label: '@usuário ou ID',
+                    hint: 'ex: @ana.paula ou ZP-4K8M9P2X',
                     prefixIcon: Icons.person_search_rounded,
-                    keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.search,
                     enabled: !_searching && !_saving,
                     onFieldSubmitted: (_) => _search(),
@@ -207,6 +206,17 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            if (found.publicId.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'ID: ${found.publicId}',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: secondaryText,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                             if (found.about.trim().isNotEmpty) ...[
                               const SizedBox(height: 10),
                               Text(

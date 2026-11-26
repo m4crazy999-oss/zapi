@@ -3,7 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Verifica se a requisição pertence a um usuário autenticado no Firebase Auth.
+    // Verifica se a requisição pertence a um usuário autenticado.
     function isSignedIn() {
       return request.auth != null;
     }
@@ -17,6 +17,12 @@ service cloud.firestore {
     function isValidUsername(username) {
       return username is string
         && username.matches('^[a-z0-9._]{3,20}$');
+    }
+
+    // Novo: valida formato do ID público único ("ZP-" + 8 caracteres alfanuméricos sem ambiguidade).
+    function isValidPublicId(publicId) {
+      return publicId is string
+        && publicId.matches('^ZP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$');
     }
 
     // Valida o ID determinístico de conversa 1 a 1 (menorUid_maiorUid) garantindo participação do usuário atual.
@@ -51,7 +57,7 @@ service cloud.firestore {
       return val == null || (val is string && val.size() <= 160000);
     }
 
-    // Valida os metadados e referências de mídia em mensagens (Firestore Spark sem Storage).
+    // Valida os metadados e referências de mídia em mensagens (chats/{chatId}/media/{mediaId}).
     function isValidMessageMedia(data) {
       let mediaId = data.get('mediaId', null);
       let thumbB64 = data.get('thumbnailBase64', null);
@@ -97,41 +103,40 @@ service cloud.firestore {
         );
     }
 
-    // Verifica se o documento users/{uid} contém apenas campos permitidos na criação do perfil.
+    // Alterado: remove email e allowEmailSearch do users/{uid} e exige publicId válido na criação.
     function isValidUserCreate(uid) {
       let data = request.resource.data;
       return data.keys().hasOnly([
-          'uid', 'displayName', 'username', 'email', 'photoBase64', 'photoUrl',
-          'about', 'createdAt', 'lastSeen', 'allowEmailSearch', 'blockedUids', 'activeChatId'
+          'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
+          'about', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
         ])
         && data.uid == uid
         && data.displayName is string
         && data.displayName.size() >= 2
         && data.displayName.size() <= 50
         && isValidUsername(data.username)
-        && data.email is string
-        && data.email.size() >= 5
+        && isValidPublicId(data.publicId)
         && isValidProfilePhotoBase64(data.get('photoBase64', null))
         && (data.get('photoUrl', null) == null || data.photoUrl is string)
         && data.about is string
         && data.about.size() <= 140
         && data.createdAt is timestamp
         && data.lastSeen is timestamp
-        && (!('allowEmailSearch' in data) || data.allowEmailSearch is bool)
         && (!('blockedUids' in data) || data.blockedUids is list)
         && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string);
     }
 
-    // Valida atualização do próprio perfil preservando uid, email e createdAt imutáveis.
+    // Alterado: proíbe email/allowEmailSearch após gravação, mantém publicId imutável após definido e permite migração de contas antigas pelo dono.
     function isValidUserUpdate(uid) {
       let data = request.resource.data;
       return data.keys().hasOnly([
-          'uid', 'displayName', 'username', 'email', 'photoBase64', 'photoUrl',
-          'about', 'createdAt', 'lastSeen', 'allowEmailSearch', 'blockedUids', 'activeChatId'
+          'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
+          'about', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
         ])
         && data.uid == resource.data.uid
-        && data.email == resource.data.email
         && data.createdAt == resource.data.createdAt
+        && isValidPublicId(data.publicId)
+        && (!('publicId' in resource.data) || data.publicId == resource.data.publicId)
         && data.displayName is string
         && data.displayName.size() >= 2
         && data.displayName.size() <= 50
@@ -141,26 +146,38 @@ service cloud.firestore {
         && data.about is string
         && data.about.size() <= 140
         && data.lastSeen is timestamp
-        && (!('allowEmailSearch' in data) || data.allowEmailSearch is bool)
         && (!('blockedUids' in data) || data.blockedUids is list)
         && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string);
     }
 
     match /users/{uid} {
-      // Permite leitura pontual de perfis exclusivamente para usuários autenticados.
+      // Permite leitura pontual de perfil público (sem e-mail) apenas para usuários autenticados.
       allow get: if isSignedIn();
 
-      // Permite consulta/busca em users apenas para perfis que autorizaram busca por e-mail.
-      allow list: if isSignedIn() && resource.data.allowEmailSearch == true;
+      // Alterado: bloqueia totalmente qualquer consulta/listagem em users (remove busca por e-mail).
+      allow list: if false;
 
-      // Permite criação do próprio perfil apenas pelo dono e com schema validado.
+      // Permite criação do próprio perfil apenas pelo dono e com schema privado validado.
       allow create: if isOwner(uid) && isValidUserCreate(uid);
 
-      // Permite edição do próprio perfil apenas pelo dono, preservando campos imutáveis.
+      // Permite edição e limpeza de migração do próprio perfil apenas pelo dono.
       allow update: if isOwner(uid) && isValidUserUpdate(uid);
 
       // Permite exclusão do próprio documento de perfil durante encerramento da conta.
       allow delete: if isOwner(uid);
+
+      // Novo: subcoleção privada de dados da conta (e-mail), legível e gravável exclusivamente pelo dono.
+      match /private/{docId} {
+        allow get: if isOwner(uid) && docId == 'account';
+        allow list: if false;
+        allow create, update: if isOwner(uid)
+          && docId == 'account'
+          && request.resource.data.keys().hasOnly(['email', 'updatedAt'])
+          && request.resource.data.email is string
+          && request.resource.data.email.size() >= 5
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if isOwner(uid) && docId == 'account';
+      }
 
       match /contacts/{contactUid} {
         // Permite ler contatos exclusivamente pelo próprio dono da agenda.
@@ -190,7 +207,7 @@ service cloud.firestore {
         // Permite gerenciar figurinhas próprias exclusivamente pelo dono.
         allow read, delete: if isOwner(uid);
 
-        // Figurinhas próprias em WebP 512x512 (< 100 KB ≈ <= 145.000 chars base64) ou favoritas nativas.
+        // Figurinhas próprias em WebP 512x512 (< 100 KB) ou favoritas nativas.
         allow create, update: if isOwner(uid)
           && request.resource.data.keys().hasOnly([
             'id', 'data', 'assetPath', 'mimeType', 'sizeBytes',
@@ -220,25 +237,42 @@ service cloud.firestore {
     }
 
     match /usernames/{username} {
-      // Permite leitura pontual (get) por documento exato para checar disponibilidade, login e busca de contatos.
-      allow get: if isValidUsername(username);
+      // Alterado: leitura pontual de @usuário permitida apenas para usuários autenticados.
+      allow get: if isSignedIn() && isValidUsername(username);
 
-      // Bloqueia listagem (list) da coleção para impedir coleta/enumeração em massa de usuários e e-mails.
+      // Bloqueia listagem (list) da coleção para impedir coleta/enumeração em massa de usuários.
       allow list: if false;
 
-      // Permite reservar um @usuário apenas se ele ainda não existir e pertencer ao próprio uid autenticado.
+      // Alterado: reserva de @usuário agora guarda somente {uid, createdAt}, sem e-mail.
       allow create: if isSignedIn()
         && isValidUsername(username)
         && !exists(/databases/$(database)/documents/usernames/$(username))
-        && request.resource.data.keys().hasOnly(['uid', 'email', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email is string
         && request.resource.data.createdAt is timestamp;
 
-      // Proíbe sobrescrever reserva de @usuário existente (trocas usam transação delete + create).
-      allow update: if false;
+      // Alterado: permite ao dono apenas limpar o campo legado email durante a migração (mantendo uid e createdAt).
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt;
 
       // Permite remover o registro de @usuário apenas ao seu atual dono (troca de @usuário ou exclusão de conta).
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Novo: índice direto por ID público único (ZP-XXXXXXXX) para busca de contatos sem varredura.
+    match /publicIds/{publicId} {
+      allow get: if isSignedIn() && isValidPublicId(publicId);
+      allow list: if false;
+      allow create: if isSignedIn()
+        && isValidPublicId(publicId)
+        && !exists(/databases/$(database)/documents/publicIds/$(publicId))
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt is timestamp;
+      allow update: if false;
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
@@ -272,7 +306,7 @@ service cloud.firestore {
         // Apenas participantes da conversa podem ler documentos de mídia.
         allow read: if isChatParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data);
 
-        // Permite gravar mídia em base64 apenas ao remetente participante, respeitando limites do plano Spark.
+        // Permite gravar mídia em base64 apenas ao remetente participante, respeitando limites de tamanho.
         allow create: if isValidDirectChatId(chatId)
           && isChatParticipant(getAfter(/databases/$(database)/documents/chats/$(chatId)).data)
           && isValidMediaDocument(chatId, mediaId, request.resource.data)

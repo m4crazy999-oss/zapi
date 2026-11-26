@@ -171,7 +171,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
-                                  'Escolha uma foto\npara recortar (512×512)',
+                                  'Escolha uma foto\npara recortar',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: secondaryText,
@@ -214,7 +214,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
             value: _circularMask,
             title: const Text('Recorte circular com bordas transparentes'),
             subtitle: const Text(
-              'Remove os cantos da foto em PNG transparente 512×512.',
+              'Deixa os cantos transparentes em formato redondo.',
             ),
             onChanged: _isProcessing || _isSaving
                 ? null
@@ -242,7 +242,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'O recorte roda direto no celular (WebP 512×512 até 100 KB), salvo no Firestore gratuito sem precisar do Storage.',
+                    'Escolha uma foto da galeria ou câmera, recorte como preferir e salve para usar nas conversas.',
                     style: TextStyle(fontSize: 12.5, color: secondaryText),
                   ),
                 ),

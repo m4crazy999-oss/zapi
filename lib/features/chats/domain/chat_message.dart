@@ -25,20 +25,20 @@ class MessageTypes {
   }) {
     final clean = text.trim();
     switch (type) {
-      case image:
+      case MessageTypes.image:
         if (clean.isNotEmpty) {
           final short = clean.length > 80 ? '${clean.substring(0, 77)}...' : clean;
           return '📷 Foto: $short';
         }
         return '📷 Foto';
-      case audio:
+      case MessageTypes.audio:
         final dur = durationMs != null && durationMs > 0
             ? DateFormatter.formatDuration(Duration(milliseconds: durationMs))
             : '0:00';
         return '🎤 Áudio $dur';
-      case sticker:
+      case MessageTypes.sticker:
         return 'Figurinha';
-      case 'text':
+      case MessageTypes.text:
       default:
         return clean.length > 120 ? '${clean.substring(0, 117)}...' : clean;
     }

@@ -31,6 +31,20 @@ class ProfileRepository {
     });
   }
 
+  Stream<String> watchPrivateEmail(String uid) {
+    return _firestore
+        .collection(AppConstants.usersCollection)
+        .doc(uid)
+        .collection(AppConstants.privateSubcollection)
+        .doc(AppConstants.privateAccountDoc)
+        .snapshots()
+        .map((doc) {
+      final email = (doc.data()?['email'] as String?)?.trim() ?? '';
+      if (email.isNotEmpty) return email;
+      return _auth.currentUser?.email ?? '';
+    });
+  }
+
   Future<void> updateProfile({
     required String uid,
     required String displayName,
@@ -59,7 +73,6 @@ class ProfileRepository {
 
         final data = userSnap.data()!;
         final currentUsername = (data['username'] as String?) ?? '';
-        final email = (data['email'] as String?) ?? '';
 
         if (normalizedUsername != currentUsername) {
           final newUsernameSnap = await transaction.get(newUsernameRef);
@@ -78,7 +91,6 @@ class ProfileRepository {
 
           transaction.set(newUsernameRef, {
             'uid': uid,
-            'email': email,
             'createdAt': FieldValue.serverTimestamp(),
           });
         }
@@ -103,7 +115,7 @@ class ProfileRepository {
   }) async {
     if (bytes.length > AppConstants.maxProfilePhotoBytes) {
       throw const AppException(
-        'A foto de perfil ultrapassa o limite de 100 KB.',
+        'A foto selecionada é muito grande. Tente escolher outra imagem.',
       );
     }
 

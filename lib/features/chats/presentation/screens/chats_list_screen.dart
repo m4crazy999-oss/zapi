@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../contacts/presentation/providers/contacts_providers.dart';
@@ -13,8 +14,23 @@ import '../../domain/chat_thread.dart';
 import '../providers/chats_providers.dart';
 import '../widgets/message_bubble.dart';
 
-class ChatsListScreen extends ConsumerWidget {
+class ChatsListScreen extends ConsumerStatefulWidget {
   const ChatsListScreen({super.key});
+
+  @override
+  ConsumerState<ChatsListScreen> createState() => _ChatsListScreenState();
+}
+
+class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
+  final _searchController = TextEditingController();
+  bool _isSearching = false;
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   MessageStatus _parseThreadStatus(ChatThread thread) {
     if (thread.hasPendingWrites) return MessageStatus.sending;
@@ -28,8 +44,18 @@ class ChatsListScreen extends ConsumerWidget {
     }
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _searchController.clear();
+        _searchQuery = '';
+      }
+    });
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final myUid = ref.watch(firebaseAuthProvider).currentUser?.uid ?? '';
     final profile = ref.watch(currentUserProfileProvider).value;
     final chatsAsync = ref.watch(userChatsProvider);
@@ -48,11 +74,49 @@ class ChatsListScreen extends ConsumerWidget {
       }
     });
 
+    final normalizedQuery = _searchQuery.trim().toLowerCase();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Zapi'),
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                decoration: InputDecoration(
+                  hintText: 'Pesquisar conversas...',
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  contentPadding: EdgeInsets.zero,
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                ),
+              )
+            : const Text('Zapi'),
+        leading: _isSearching
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: _toggleSearch,
+              )
+            : null,
         actions: [
-          if (profile != null)
+          if (!_isSearching)
+            IconButton(
+              tooltip: 'Pesquisar conversas',
+              icon: const Icon(Icons.search_rounded),
+              onPressed: _toggleSearch,
+            ),
+          if (profile != null && !_isSearching)
             Padding(
               padding: const EdgeInsets.only(right: 16),
               child: ZapiAvatar(
@@ -73,7 +137,7 @@ class ChatsListScreen extends ConsumerWidget {
         child: const Icon(Icons.chat_rounded),
       ),
       body: chatsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const ZapiListSkeleton(),
         error: (_, __) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -85,7 +149,24 @@ class ChatsListScreen extends ConsumerWidget {
           ),
         ),
         data: (chats) {
-          if (chats.isEmpty) {
+          final visibleChats = normalizedQuery.isEmpty
+              ? chats
+              : chats.where((chat) {
+                  final otherUid = chat.otherParticipantUid(myUid);
+                  final savedContact = contactsByUid[otherUid];
+                  final threadProfile = chat.profileFor(otherUid);
+                  final displayName = savedContact?.effectiveName ??
+                      threadProfile?.displayName ??
+                      '';
+                  final username = savedContact?.username ??
+                      threadProfile?.username ??
+                      '';
+                  return displayName.toLowerCase().contains(normalizedQuery) ||
+                      username.toLowerCase().contains(normalizedQuery) ||
+                      chat.lastMessage.toLowerCase().contains(normalizedQuery);
+                }).toList();
+
+          if (visibleChats.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -99,15 +180,19 @@ class ChatsListScreen extends ConsumerWidget {
                         color: AppColors.emerald.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.forum_outlined,
+                      child: Icon(
+                        normalizedQuery.isNotEmpty
+                            ? Icons.search_off_rounded
+                            : Icons.forum_outlined,
                         size: 38,
                         color: AppColors.emerald,
                       ),
                     ),
                     const SizedBox(height: 18),
                     Text(
-                      'Nenhuma conversa ainda',
+                      normalizedQuery.isNotEmpty
+                          ? 'Nenhuma conversa encontrada'
+                          : 'Nenhuma conversa ainda',
                       style: Theme.of(context)
                           .textTheme
                           .titleMedium
@@ -115,16 +200,20 @@ class ChatsListScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Adicione um contato pelo @usuário ou e-mail e comece a conversar em tempo real.',
+                      normalizedQuery.isNotEmpty
+                          ? 'Tente buscar por outro nome ou @usuário.'
+                          : 'Adicione um contato pelo @usuário ou ID exclusivo e comece a conversar.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: secondaryText),
                     ),
-                    const SizedBox(height: 20),
-                    FilledButton.icon(
-                      onPressed: () => context.go('/contacts'),
-                      icon: const Icon(Icons.people_outline_rounded),
-                      label: const Text('Ir para Contatos'),
-                    ),
+                    if (normalizedQuery.isEmpty) ...[
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: () => context.go('/contacts'),
+                        icon: const Icon(Icons.people_outline_rounded),
+                        label: const Text('Ir para Contatos'),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -133,10 +222,10 @@ class ChatsListScreen extends ConsumerWidget {
 
           return ListView.separated(
             padding: const EdgeInsets.only(bottom: 88),
-            itemCount: chats.length,
+            itemCount: visibleChats.length,
             separatorBuilder: (_, __) => const Divider(indent: 78),
             itemBuilder: (context, index) {
-              final chat = chats[index];
+              final chat = visibleChats[index];
               final otherUid = chat.otherParticipantUid(myUid);
               final savedContact = contactsByUid[otherUid];
               final threadProfile = chat.profileFor(otherUid);

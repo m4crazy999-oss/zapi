@@ -45,7 +45,7 @@ class StickersRepository {
   }) async {
     if (webpBytes.length > AppConstants.maxStickerBytes) {
       throw const AppException(
-        'A figurinha ultrapassa o limite de 100 KB.',
+        'A figurinha ficou pesada demais. Escolha uma foto mais simples.',
       );
     }
 

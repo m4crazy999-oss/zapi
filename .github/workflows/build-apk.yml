@@ -69,9 +69,6 @@ jobs:
           python3 scripts/generate_branding_assets.py
           python3 scripts/generate_stickers.py
 
-      - name: Alinhar Gradle com o Flutter
-        run: bash scripts/fix_android_gradle.sh
-
       - name: Instalar dependências Dart/Flutter
         run: flutter pub get
 
@@ -81,7 +78,7 @@ jobs:
           dart run flutter_native_splash:create
 
       - name: Analisar código Dart
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+        run: flutter analyze
 
       - name: Compilar APK Release com versionamento automático
         run: |

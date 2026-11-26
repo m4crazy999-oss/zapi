@@ -19,12 +19,12 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _identifierController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
   void dispose() {
-    _identifierController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -35,7 +35,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     try {
       await ref.read(authControllerProvider.notifier).signIn(
-            identifier: _identifierController.text,
+            email: _emailController.text,
             password: _passwordController.text,
           );
     } on AppException catch (e) {
@@ -69,7 +69,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Center(child: ZapiLogo(size: 76, showLabel: true)),
+                    const Center(child: ZapiLogo(size: 80, showLabel: true)),
                     const SizedBox(height: 8),
                     Text(
                       AppConstants.appTagline,
@@ -87,15 +87,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(height: 16),
                     ZapiTextField(
-                      controller: _identifierController,
-                      label: 'E-mail ou @usuário',
-                      hint: 'seu@email.com ou @usuario',
-                      prefixIcon: Icons.alternate_email_rounded,
+                      controller: _emailController,
+                      label: 'E-mail',
+                      hint: 'seu@email.com',
+                      prefixIcon: Icons.email_outlined,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       enabled: !isLoading,
-                      validator: Validators.validateLoginIdentifier,
-                      autofillHints: const [AutofillHints.username],
+                      validator: Validators.validateEmail,
+                      autofillHints: const [AutofillHints.email],
                     ),
                     const SizedBox(height: 14),
                     ZapiTextField(

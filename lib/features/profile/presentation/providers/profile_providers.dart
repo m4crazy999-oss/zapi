@@ -22,6 +22,14 @@ final currentUserProfileProvider = StreamProvider<AppUser?>((ref) {
   return ref.watch(profileRepositoryProvider).watchProfile(authUser.uid);
 });
 
+final privateAccountEmailProvider = StreamProvider<String>((ref) {
+  final authUser = ref.watch(authStateProvider).value;
+  if (authUser == null) {
+    return Stream.value('');
+  }
+  return ref.watch(profileRepositoryProvider).watchPrivateEmail(authUser.uid);
+});
+
 class ProfileController extends AsyncNotifier<void> {
   @override
   FutureOr<void> build() {}

@@ -235,6 +235,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _isSending = true;
     });
 
+    unawaited(HapticFeedback.lightImpact());
     try {
       await ref.read(chatsRepositoryProvider).sendTextMessage(
             chatId: widget.chatId,
@@ -420,7 +421,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       uid: peerUid,
       displayName: contact?.displayName ?? profile?.displayName ?? 'Usuário Zapi',
       username: contact?.username ?? profile?.username ?? '',
-      email: '',
       about: contact?.about ?? '',
       photoBase64: contact?.photoBase64 ?? profile?.photoBase64,
       photoUrl: contact?.photoUrl ?? profile?.photoUrl,
@@ -452,6 +452,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     required String senderLabel,
     required bool isLastMessage,
   }) {
+    unawaited(HapticFeedback.mediumImpact());
     final isMine = message.senderId == _myUid;
 
     if (message.isUploading || message.uploadFailed) {
@@ -972,17 +973,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       );
                     },
                   ),
-                  if (_hasNewBelow)
+                  if (!_isAtBottom || _hasNewBelow)
                     Positioned(
                       right: 16,
                       bottom: 12,
                       child: FloatingActionButton.small(
+                        tooltip: 'Ir para a última mensagem',
                         onPressed: _scrollToBottom,
                         backgroundColor: isDark
                             ? AppColors.darkSurfaceAlt
                             : AppColors.lightSurface,
                         foregroundColor: AppColors.emerald,
-                        child: const Icon(Icons.keyboard_arrow_down_rounded),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: [
+                            const Icon(Icons.keyboard_arrow_down_rounded),
+                            if (_hasNewBelow)
+                              Positioned(
+                                right: -4,
+                                top: -4,
+                                child: Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.emerald,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                 ],

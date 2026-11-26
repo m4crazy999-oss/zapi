@@ -38,7 +38,7 @@ class FirebaseErrorMapper {
         case 'wrong-password':
         case 'invalid-credential':
           return const AppException(
-            'E-mail/@usuário ou senha incorretos.',
+            'E-mail ou senha incorretos.',
           );
         case 'user-disabled':
           return const AppException(
@@ -57,8 +57,8 @@ class FirebaseErrorMapper {
             'Por segurança, confirme sua senha atual para concluir esta ação.',
           );
         default:
-          return AppException(
-            error.message ?? 'Erro de autenticação. Tente novamente.',
+          return const AppException(
+            'Não foi possível entrar agora. Tente novamente.',
           );
       }
     }
@@ -78,13 +78,13 @@ class FirebaseErrorMapper {
         case 'object-not-found':
         case 'not-found':
           return const AppException(
-            'O recurso solicitado não foi encontrado.',
+            'O item solicitado não foi encontrado.',
           );
         case 'canceled':
           return const AppException('Operação cancelada.');
         default:
-          return AppException(
-            error.message ?? 'Não foi possível concluir a operação no servidor.',
+          return const AppException(
+            'Não foi possível concluir esta ação. Tente novamente.',
           );
       }
     }

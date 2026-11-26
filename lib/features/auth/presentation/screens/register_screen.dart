@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../core/widgets/zapi_logo.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../providers/auth_providers.dart';
 
@@ -23,10 +24,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  bool? _usernameAvailable;
-  bool _checkingUsername = false;
-  String _lastCheckedUsername = '';
-
   @override
   void dispose() {
     _displayNameController.dispose();
@@ -35,44 +32,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
-  }
-
-  Future<void> _checkUsernameAvailability(String value) async {
-    final normalized = Validators.normalizeUsername(value);
-    if (Validators.validateUsername(normalized) != null) {
-      if (mounted) {
-        setState(() {
-          _usernameAvailable = null;
-          _checkingUsername = false;
-          _lastCheckedUsername = normalized;
-        });
-      }
-      return;
-    }
-
-    setState(() {
-      _checkingUsername = true;
-      _lastCheckedUsername = normalized;
-    });
-
-    try {
-      final available = await ref
-          .read(authRepositoryProvider)
-          .isUsernameAvailable(normalized);
-      if (mounted && _lastCheckedUsername == normalized) {
-        setState(() {
-          _usernameAvailable = available;
-          _checkingUsername = false;
-        });
-      }
-    } catch (_) {
-      if (mounted && _lastCheckedUsername == normalized) {
-        setState(() {
-          _usernameAvailable = null;
-          _checkingUsername = false;
-        });
-      }
-    }
   }
 
   Future<void> _submit() async {
@@ -119,8 +78,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const Center(child: ZapiLogo(size: 56)),
+                    const SizedBox(height: 14),
                     Text(
                       'Configure seu perfil inicial no Zapi.',
+                      textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: secondaryText,
                           ),
@@ -144,62 +106,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       prefixIcon: Icons.alternate_email_rounded,
                       textInputAction: TextInputAction.next,
                       enabled: !isLoading,
-                      onChanged: _checkUsernameAvailability,
                       validator: Validators.validateUsername,
                     ),
-                    if (_checkingUsername || _usernameAvailable != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6, left: 4),
-                        child: Row(
-                          children: [
-                            if (_checkingUsername) ...[
-                              const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Verificando disponibilidade...',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: secondaryText),
-                              ),
-                            ] else if (_usernameAvailable == true) ...[
-                              const Icon(
-                                Icons.check_circle_rounded,
-                                size: 16,
-                                color: AppColors.success,
-                              ),
-                              const SizedBox(width: 6),
-                              const Text(
-                                '@usuário disponível!',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  color: AppColors.success,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ] else if (_usernameAvailable == false) ...[
-                              Icon(
-                                Icons.cancel_rounded,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Este @usuário já está em uso.',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  color: Theme.of(context).colorScheme.error,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        'Seu e-mail nunca fica visível para outras pessoas.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: secondaryText,
+                            ),
                       ),
+                    ),
                     const SizedBox(height: 14),
                     ZapiTextField(
                       controller: _emailController,

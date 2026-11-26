@@ -16,8 +16,11 @@ class ZapiLogo extends StatelessWidget {
     final mark = SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: _ZapiLogoPainter(),
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: CustomPaint(
+          painter: _ZapiLogoPainter(),
+        ),
       ),
     );
 
@@ -43,8 +46,14 @@ class ZapiLogo extends StatelessWidget {
 class _ZapiLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
+    final side = size.shortestSide;
+    final offsetX = (size.width - side) / 2;
+    final offsetY = (size.height - side) / 2;
+    final w = side;
+    final h = side;
+
+    canvas.save();
+    canvas.translate(offsetX, offsetY);
 
     final bgRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(0, 0, w, h),
@@ -63,16 +72,16 @@ class _ZapiLogoPainter extends CustomPainter {
     final bubblePaint = Paint()..color = Colors.white;
     final bubblePath = Path();
     final bubbleRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w * 0.19, h * 0.21, w * 0.62, h * 0.54),
-      Radius.circular(w * 0.22),
+      Rect.fromLTWH(w * 0.19, h * 0.19, w * 0.62, h * 0.54),
+      Radius.circular(w * 0.21),
     );
     bubblePath.addRRect(bubbleRect);
 
     // Cauda do balão no canto inferior esquerdo
     final tailPath = Path()
-      ..moveTo(w * 0.28, h * 0.68)
-      ..lineTo(w * 0.22, h * 0.80)
-      ..lineTo(w * 0.42, h * 0.73)
+      ..moveTo(w * 0.29, h * 0.66)
+      ..lineTo(w * 0.22, h * 0.79)
+      ..lineTo(w * 0.43, h * 0.71)
       ..close();
     bubblePath.addPath(tailPath, Offset.zero);
     canvas.drawPath(bubblePath, bubblePaint);
@@ -86,12 +95,13 @@ class _ZapiLogoPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     final zPath = Path()
-      ..moveTo(w * 0.37, h * 0.39)
-      ..lineTo(w * 0.63, h * 0.39)
-      ..lineTo(w * 0.37, h * 0.58)
-      ..lineTo(w * 0.63, h * 0.58);
+      ..moveTo(w * 0.37, h * 0.37)
+      ..lineTo(w * 0.63, h * 0.37)
+      ..lineTo(w * 0.37, h * 0.55)
+      ..lineTo(w * 0.63, h * 0.55);
 
     canvas.drawPath(zPath, zPaint);
+    canvas.restore();
   }
 
   @override
