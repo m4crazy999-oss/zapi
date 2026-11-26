@@ -1,0 +1,13 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="zapiBg" x1="120" y1="80" x2="904" y2="944" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00C897"/>
+      <stop offset="100%" stop-color="#008E6F"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#zapiBg)"/>
+  <!-- Balão de conversa moderno -->
+  <path d="M512 222C340.79 222 202 346.29 202 499.6C202 567.7 229.4 630.05 274.88 678.2L232 798L361.4 756.7C407.4 770.1 458.5 777.2 512 777.2C683.21 777.2 822 652.91 822 499.6C822 346.29 683.21 222 512 222Z" fill="#FFFFFF"/>
+  <!-- Letra Z geométrica em esmeralda -->
+  <path d="M394 402H630C644.36 402 656 413.64 656 428C656 435.56 652.7 442.75 646.96 447.68L470.5 599H630C644.36 599 656 610.64 656 625C656 639.36 644.36 651 630 651H394C379.64 651 368 639.36 368 625C368 617.44 371.3 610.25 377.04 605.32L553.5 454H394C379.64 454 368 442.36 368 428C368 413.64 379.64 402 394 402Z" fill="#00A884"/>
+</svg>

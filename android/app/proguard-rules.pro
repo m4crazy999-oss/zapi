@@ -1,0 +1,15 @@
+# Regras ProGuard/R8 para Flutter, Firebase, Gson e uCrop (image_cropper)
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class io.flutter.app.** { *; }
+-keep class io.flutter.plugin.** { *; }
+-keep class io.flutter.util.** { *; }
+-keep class io.flutter.view.** { *; }
+-keep class io.flutter.** { *; }
+-keep class io.flutter.plugins.** { *; }
+-dontwarn io.flutter.embedding.**
+-keep class com.yalantis.ucrop** { *; }
+-dontwarn com.yalantis.ucrop**
+-keep class com.google.firebase.** { *; }
+-keep class com.google.gson.** { *; }
+-dontwarn com.google.errorprone.annotations.**
