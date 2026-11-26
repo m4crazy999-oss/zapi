@@ -75,7 +75,7 @@ class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
             label: 'Conversas',
           ),
           const NavigationDestination(
-            icon: Icon(Icons.donut_large_outlined),
+            icon: Icon(Icons.donut_large_rounded),
             selectedIcon: Icon(Icons.donut_large_rounded),
             label: 'Status',
           ),

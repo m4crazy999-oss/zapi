@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -9,7 +8,6 @@ import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
-import '../../../profile/presentation/providers/profile_providers.dart';
 import '../../domain/app_contact.dart';
 import '../providers/contacts_providers.dart';
 
@@ -27,15 +25,6 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
-  }
-
-  Future<void> _copyIdentifier(String value, String label) async {
-    await Clipboard.setData(ClipboardData(text: value));
-    await HapticFeedback.lightImpact();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label $value copiado!')),
-    );
   }
 
   void _openChat(AppContact contact) {
@@ -127,7 +116,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.chat_bubble_outline_rounded),
+                leading: const Icon(Icons.chat_bubble_rounded),
                 title: const Text('Enviar mensagem'),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -135,7 +124,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.edit_outlined),
+                leading: const Icon(Icons.edit_rounded),
                 title: const Text('Editar apelido local'),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -144,7 +133,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
               ),
               ListTile(
                 leading: Icon(
-                  Icons.person_remove_outlined,
+                  Icons.person_remove_rounded,
                   color: Theme.of(context).colorScheme.error,
                 ),
                 title: Text(
@@ -168,7 +157,6 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final myProfile = ref.watch(currentUserProfileProvider).value;
     final contactsAsync = ref.watch(filteredContactsProvider);
     final query = ref.watch(contactsSearchQueryProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -178,6 +166,17 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Contatos'),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/contacts/add'),
+        backgroundColor: AppColors.emerald,
+        foregroundColor: Colors.white,
+        tooltip: 'Adicionar contato por ID',
+        icon: const Icon(Icons.person_add_alt_1_rounded),
+        label: const Text(
+          'Adicionar contato',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
       body: Column(
         children: [
@@ -205,69 +204,6 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
               ),
             ),
           ),
-          if (myProfile != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Card(
-                margin: EdgeInsets.zero,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => context.push('/profile'),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.qr_code_2_rounded,
-                          size: 20,
-                          color: isDark
-                              ? AppColors.emeraldBright
-                              : AppColors.emeraldDark,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                myProfile.publicId.isNotEmpty
-                                    ? 'Meu ID: ${myProfile.publicId}'
-                                    : 'Meu @usuário: @${myProfile.username}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13.5,
-                                ),
-                              ),
-                              if (myProfile.publicId.isNotEmpty)
-                                Text(
-                                  '@${myProfile.username}',
-                                  style: TextStyle(
-                                    color: secondaryText,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => _copyIdentifier(
-                            myProfile.publicId.isNotEmpty
-                                ? myProfile.publicId
-                                : '@${myProfile.username}',
-                            myProfile.publicId.isNotEmpty ? 'ID' : '@usuário',
-                          ),
-                          icon: const Icon(Icons.copy_rounded, size: 16),
-                          label: const Text('Copiar'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
           Expanded(
             child: contactsAsync.when(
               loading: () => const ZapiListSkeleton(showTimestamp: false),
@@ -297,7 +233,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(
-                              Icons.people_outline_rounded,
+                              Icons.people_rounded,
                               size: 38,
                               color: AppColors.emerald,
                             ),
@@ -316,7 +252,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           Text(
                             query.isNotEmpty
                                 ? 'Tente buscar por outro nome ou @usuário.'
-                                : 'Para adicionar alguém, toque no botão de adicionar na aba Conversas e informe o ID exclusivo ou @usuário da pessoa.',
+                                : 'Toque em "Adicionar contato" para encontrar alguém pelo ID exclusivo ou @usuário.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: secondaryText),
                           ),
@@ -335,7 +271,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 4,
+                        vertical: 6,
                       ),
                       leading: ZapiAvatar(
                         displayName: contact.effectiveName,
@@ -356,20 +292,19 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                               ),
                             ),
                           ),
-                          if (contact.hasNickname)
-                            Text(
-                              '@${contact.username}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: secondaryText,
-                              ),
+                          Text(
+                            '@${contact.username}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: secondaryText,
                             ),
+                          ),
                         ],
                       ),
                       subtitle: Text(
-                        contact.about.isNotEmpty
+                        contact.about.trim().isNotEmpty
                             ? contact.about
-                            : '@${contact.username}',
+                            : 'Sem recado',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: secondaryText, fontSize: 13.5),

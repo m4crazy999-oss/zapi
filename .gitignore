@@ -33,3 +33,4 @@ android/key.properties
 *.pem
 .env
 .env.*
+zapi-server/

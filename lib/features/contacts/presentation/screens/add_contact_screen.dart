@@ -75,11 +75,10 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${targetUser.displayName} adicionado! Acesse a aba Contatos para enviar mensagem.',
+            '${targetUser.displayName} adicionado aos contatos!',
           ),
         ),
       );
-      context.pop();
     } on AppException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

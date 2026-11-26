@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/constants/app_constants.dart';
+
 class AppUser {
   const AppUser({
     required this.uid,
@@ -9,6 +11,7 @@ class AppUser {
     this.publicId = '',
     this.photoBase64,
     this.photoUrl,
+    this.bannerPreset = AppConstants.defaultBannerPreset,
     this.createdAt,
     this.lastSeen,
     this.blockedUids = const [],
@@ -21,6 +24,7 @@ class AppUser {
   final String publicId;
   final String? photoBase64;
   final String? photoUrl;
+  final String bannerPreset;
   final String about;
   final DateTime? createdAt;
   final DateTime? lastSeen;
@@ -34,6 +38,7 @@ class AppUser {
   factory AppUser.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? <String, dynamic>{};
     final rawBlocked = data['blockedUids'];
+    final rawBanner = (data['bannerPreset'] as String?)?.trim();
     return AppUser(
       uid: (data['uid'] as String?) ?? doc.id,
       displayName: (data['displayName'] as String?) ?? 'Usuário Zapi',
@@ -41,6 +46,9 @@ class AppUser {
       publicId: (data['publicId'] as String?) ?? '',
       photoBase64: data['photoBase64'] as String?,
       photoUrl: data['photoUrl'] as String?,
+      bannerPreset: (rawBanner != null && rawBanner.isNotEmpty)
+          ? rawBanner
+          : AppConstants.defaultBannerPreset,
       about: (data['about'] as String?) ?? '',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       lastSeen: (data['lastSeen'] as Timestamp?)?.toDate(),
@@ -58,6 +66,7 @@ class AppUser {
     String? publicId,
     String? photoBase64,
     String? photoUrl,
+    String? bannerPreset,
     String? about,
     DateTime? createdAt,
     DateTime? lastSeen,
@@ -71,6 +80,7 @@ class AppUser {
       publicId: publicId ?? this.publicId,
       photoBase64: photoBase64 ?? this.photoBase64,
       photoUrl: photoUrl ?? this.photoUrl,
+      bannerPreset: bannerPreset ?? this.bannerPreset,
       about: about ?? this.about,
       createdAt: createdAt ?? this.createdAt,
       lastSeen: lastSeen ?? this.lastSeen,

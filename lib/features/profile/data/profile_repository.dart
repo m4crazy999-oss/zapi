@@ -152,4 +152,21 @@ class ProfileRepository {
       throw FirebaseErrorMapper.map(error);
     }
   }
+
+  Future<void> updateBannerPreset({
+    required String uid,
+    required String bannerPreset,
+  }) async {
+    try {
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(uid)
+          .update({
+        'bannerPreset': bannerPreset,
+        'lastSeen': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
 }

@@ -116,8 +116,21 @@ class MessageBubble extends ConsumerWidget {
             : Colors.black.withValues(alpha: 0.05))
         : (isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurfaceAlt);
 
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) {
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 6),
+            child: child,
+          ),
+        );
+      },
+      child: Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onLongPress: onLongPress,
         child: Container(
@@ -275,6 +288,7 @@ class MessageBubble extends ConsumerWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -367,7 +381,7 @@ class _StickerBubble extends StatelessWidget {
   }
 }
 
-class _ImageBubbleContent extends StatelessWidget {
+class _ImageBubbleContent extends ConsumerStatefulWidget {
   const _ImageBubbleContent({
     required this.message,
     required this.textColor,
@@ -382,7 +396,60 @@ class _ImageBubbleContent extends StatelessWidget {
   final VoidCallback? onCancelUpload;
   final VoidCallback? onRetryUpload;
 
+  @override
+  ConsumerState<_ImageBubbleContent> createState() =>
+      _ImageBubbleContentState();
+}
+
+class _ImageBubbleContentState extends ConsumerState<_ImageBubbleContent> {
   static final Map<String, Uint8List> _thumbMemoryCache = {};
+  File? _resolvedFullFile;
+  bool _requestedFull = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveFullQuality();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ImageBubbleContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.mediaId != widget.message.mediaId ||
+        oldWidget.message.isUploading != widget.message.isUploading) {
+      _requestedFull = false;
+      _resolveFullQuality();
+    }
+  }
+
+  Future<void> _resolveFullQuality() async {
+    final msg = widget.message;
+    if (_requestedFull ||
+        msg.isUploading ||
+        msg.uploadFailed ||
+        msg.chatId.isEmpty ||
+        msg.mediaId == null ||
+        msg.mediaId!.isEmpty) {
+      return;
+    }
+
+    final localPath = msg.localMediaPath;
+    if (localPath != null && File(localPath).existsSync()) {
+      return;
+    }
+
+    _requestedFull = true;
+    try {
+      final file = await ref.read(mediaCacheServiceProvider).getOrFetchChatMedia(
+            chatId: msg.chatId,
+            mediaId: msg.mediaId!,
+            mimeType: msg.mimeType ?? 'image/jpeg',
+          );
+      if (mounted && file != null && await file.exists()) {
+        setState(() => _resolvedFullFile = file);
+      }
+    } catch (_) {}
+  }
 
   Uint8List? _decodeThumb(String? raw) {
     if (raw == null || raw.isEmpty) return null;
@@ -401,31 +468,53 @@ class _ImageBubbleContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final message = widget.message;
     final aspect = (message.width != null &&
             message.height != null &&
             message.height! > 0)
         ? (message.width! / message.height!).clamp(0.62, 1.5)
         : 1.0;
 
-    final localPath = message.localThumbnailPath ?? message.localMediaPath;
-    final hasLocal = localPath != null && File(localPath).existsSync();
+    final fullLocalPath = message.localMediaPath;
+    final hasFullLocal =
+        fullLocalPath != null && File(fullLocalPath).existsSync();
+    final fallbackLocalPath = message.localThumbnailPath;
+    final hasThumbLocal =
+        fallbackLocalPath != null && File(fallbackLocalPath).existsSync();
     final thumbBytes = _decodeThumb(message.thumbnailBase64);
     final legacyNetworkUrl = message.thumbnailUrl ?? message.mediaUrl ?? '';
 
     Widget imageWidget;
-    if (hasLocal) {
+    if (hasFullLocal) {
       imageWidget = Image.file(
-        File(localPath),
+        File(fullLocalPath),
+        key: ValueKey('full_$fullLocalPath'),
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
+      );
+    } else if (_resolvedFullFile != null) {
+      imageWidget = Image.file(
+        _resolvedFullFile!,
+        key: ValueKey('cached_${_resolvedFullFile!.path}'),
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
+      );
+    } else if (hasThumbLocal) {
+      imageWidget = Image.file(
+        File(fallbackLocalPath),
+        key: ValueKey('local_thumb_$fallbackLocalPath'),
         fit: BoxFit.cover,
       );
     } else if (thumbBytes != null) {
       imageWidget = Image.memory(
         thumbBytes,
+        key: const ValueKey('thumb_mem'),
         fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
         gaplessPlayback: true,
         errorBuilder: (_, __, ___) => const ColoredBox(
           color: Colors.black12,
-          child: Center(child: Icon(Icons.broken_image_outlined, size: 36)),
+          child: Center(child: Icon(Icons.broken_image_rounded, size: 36)),
         ),
       );
     } else if (legacyNetworkUrl.isNotEmpty) {
@@ -434,13 +523,13 @@ class _ImageBubbleContent extends StatelessWidget {
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const ColoredBox(
           color: Colors.black12,
-          child: Center(child: Icon(Icons.broken_image_outlined, size: 36)),
+          child: Center(child: Icon(Icons.broken_image_rounded, size: 36)),
         ),
       );
     } else {
       imageWidget = const ColoredBox(
         color: Colors.black12,
-        child: Center(child: Icon(Icons.photo_outlined, size: 36)),
+        child: Center(child: Icon(Icons.photo_rounded, size: 36)),
       );
     }
 
@@ -449,7 +538,9 @@ class _ImageBubbleContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         GestureDetector(
-          onTap: message.isUploading || message.uploadFailed ? null : onImageTap,
+          onTap: message.isUploading || message.uploadFailed
+              ? null
+              : widget.onImageTap,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: AspectRatio(
@@ -457,13 +548,16 @@ class _ImageBubbleContent extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  imageWidget,
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: SizedBox.expand(child: imageWidget),
+                  ),
                   if (message.isUploading)
                     Container(
                       color: Colors.black.withValues(alpha: 0.45),
                       child: Center(
                         child: GestureDetector(
-                          onTap: onCancelUpload,
+                          onTap: widget.onCancelUpload,
                           child: Container(
                             width: 56,
                             height: 56,
@@ -506,7 +600,7 @@ class _ImageBubbleContent extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             FilledButton.icon(
-                              onPressed: onRetryUpload,
+                              onPressed: widget.onRetryUpload,
                               style: FilledButton.styleFrom(
                                 backgroundColor: AppColors.emerald,
                                 foregroundColor: Colors.white,
@@ -514,10 +608,10 @@ class _ImageBubbleContent extends StatelessWidget {
                               icon: const Icon(Icons.refresh_rounded, size: 18),
                               label: const Text('Tentar de novo'),
                             ),
-                            if (onCancelUpload != null) ...[
+                            if (widget.onCancelUpload != null) ...[
                               const SizedBox(height: 6),
                               TextButton(
-                                onPressed: onCancelUpload,
+                                onPressed: widget.onCancelUpload,
                                 child: const Text(
                                   'Cancelar',
                                   style: TextStyle(color: Colors.white70),
@@ -542,7 +636,7 @@ class _ImageBubbleContent extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14.5,
                 height: 1.3,
-                color: textColor,
+                color: widget.textColor,
               ),
             ),
           ),

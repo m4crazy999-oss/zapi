@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -31,9 +30,9 @@ class AppReleaseUpdate {
     required this.versionLabel,
     required this.remoteBuildNumber,
     required this.currentBuildNumber,
+    required this.currentVersionLabel,
     required this.title,
     required this.notes,
-    required this.isMandatory,
     required this.apkDownloadUrl,
     required this.apkFileName,
   });
@@ -41,9 +40,9 @@ class AppReleaseUpdate {
   final String versionLabel;
   final int remoteBuildNumber;
   final int currentBuildNumber;
+  final String currentVersionLabel;
   final String title;
   final List<UpdateNoteItem> notes;
-  final bool isMandatory;
   final String apkDownloadUrl;
   final String apkFileName;
 }
@@ -54,15 +53,13 @@ class AppUpdateService {
             Dio(
               BaseOptions(
                 connectTimeout: const Duration(seconds: 12),
-                receiveTimeout: const Duration(minutes: 3),
+                receiveTimeout: const Duration(minutes: 4),
                 sendTimeout: const Duration(seconds: 12),
               ),
             );
 
   static const String _latestReleaseEndpoint =
       'https://api.github.com/repos/m4crazy999-oss/zapi/releases/latest';
-  static const Duration _checkInterval = Duration(hours: 6);
-  static const String _throttleFileName = 'zapi_update_check.json';
 
   final Dio _dio;
   bool _isChecking = false;
@@ -75,28 +72,27 @@ class AppUpdateService {
     return info.version;
   }
 
-  /// Verifica se há uma versão mais nova.
-  /// Quando [force] é false (automático), respeita intervalo mínimo de 6 horas
-  /// e ignora falhas de rede silenciosamente.
-  Future<AppReleaseUpdate?> checkForUpdate({bool force = false}) async {
+  /// Verifica imediatamente na abertura e no retorno ao primeiro plano se há
+  /// uma versão mais nova publicada no repositório.
+  Future<AppReleaseUpdate?> checkForUpdate({bool throwOnError = false}) async {
     if (_isChecking) return null;
     _isChecking = true;
 
     try {
-      if (!force && !await _shouldCheckAutomatically()) {
-        return null;
-      }
-
-      await _recordCheckTimestamp();
-
       final packageInfo = await PackageInfo.fromPlatform();
       final currentBuild = int.tryParse(packageInfo.buildNumber.trim()) ?? 0;
+      final currentVersionLabel = packageInfo.version.trim().isNotEmpty
+          ? packageInfo.version.trim()
+          : '1.0.$currentBuild';
 
+      final cacheBuster = DateTime.now().millisecondsSinceEpoch;
       final response = await _dio.get<Map<String, dynamic>>(
-        _latestReleaseEndpoint,
+        '$_latestReleaseEndpoint?t=$cacheBuster',
         options: Options(
           headers: const {
             'Accept': 'application/vnd.github+json',
+            'Cache-Control': 'no-cache, no-store',
+            'Pragma': 'no-cache',
             'User-Agent': 'Zapi-Android-App',
           },
         ),
@@ -139,16 +135,16 @@ class AppUpdateService {
         versionLabel: _formatVersionLabel(tagName),
         remoteBuildNumber: remoteBuild,
         currentBuildNumber: currentBuild,
+        currentVersionLabel: currentVersionLabel,
         title: parsed.title,
         notes: parsed.notes,
-        isMandatory: parsed.isMandatory,
         apkDownloadUrl: apkUrl,
         apkFileName: _sanitizeFileName(apkName),
       );
     } catch (_) {
-      if (force) {
+      if (throwOnError) {
         throw const AppException(
-          'Não foi possível verificar atualizações agora. Tente novamente mais tarde.',
+          'Não foi possível verificar atualizações agora. Verifique sua conexão e tente novamente.',
         );
       }
       return null;
@@ -239,7 +235,6 @@ class AppUpdateService {
 
   _ParsedReleaseNotes _parseReleaseBody(String rawBody) {
     final lines = rawBody.split(RegExp(r'\r?\n'));
-    var isMandatory = false;
     String? title;
     final notes = <UpdateNoteItem>[];
 
@@ -251,11 +246,7 @@ class AppUpdateService {
     for (final rawLine in lines) {
       var line = rawLine.trim();
       if (line.isEmpty) continue;
-
-      if (mandatoryRegex.hasMatch(line)) {
-        isMandatory = true;
-        continue;
-      }
+      if (mandatoryRegex.hasMatch(line)) continue;
 
       final isBullet = line.startsWith('- ') || line.startsWith('* ');
       if (!isBullet && title == null) {
@@ -275,7 +266,6 @@ class AppUpdateService {
     return _ParsedReleaseNotes(
       title: title ?? 'Novidades e melhorias no Zapi',
       notes: notes,
-      isMandatory: isMandatory,
     );
   }
 
@@ -301,50 +291,16 @@ class AppUpdateService {
     }
     return UpdateNoteItem(type: UpdateNoteType.other, text: line);
   }
-
-  Future<File> _getThrottleFile() async {
-    final dir = await getApplicationSupportDirectory();
-    return File(p.join(dir.path, _throttleFileName));
-  }
-
-  Future<bool> _shouldCheckAutomatically() async {
-    try {
-      final file = await _getThrottleFile();
-      if (!await file.exists()) return true;
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! Map) return true;
-      final lastMs = decoded['lastCheckedAtMs'];
-      if (lastMs is! int) return true;
-      final elapsed = DateTime.now().millisecondsSinceEpoch - lastMs;
-      return elapsed >= _checkInterval.inMilliseconds;
-    } catch (_) {
-      return true;
-    }
-  }
-
-  Future<void> _recordCheckTimestamp() async {
-    try {
-      final file = await _getThrottleFile();
-      await file.writeAsString(
-        jsonEncode({
-          'lastCheckedAtMs': DateTime.now().millisecondsSinceEpoch,
-        }),
-        flush: true,
-      );
-    } catch (_) {}
-  }
 }
 
 class _ParsedReleaseNotes {
   const _ParsedReleaseNotes({
     required this.title,
     required this.notes,
-    required this.isMandatory,
   });
 
   final String title;
   final List<UpdateNoteItem> notes;
-  final bool isMandatory;
 }
 
 final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {

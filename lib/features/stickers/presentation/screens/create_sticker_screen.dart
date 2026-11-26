@@ -2,11 +2,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
+import '../../../../core/utils/image_helper.dart';
 import '../../../../core/utils/media_processor.dart';
 import '../../../../core/utils/permission_helper.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
@@ -21,7 +21,6 @@ class CreateStickerScreen extends ConsumerStatefulWidget {
 }
 
 class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
-  final _picker = ImagePicker();
   String? _croppedSourcePath;
   Uint8List? _previewPngBytes;
   bool _circularMask = true;
@@ -35,28 +34,13 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
     if (!hasPermission || !mounted) return;
 
     try {
-      final picked = await _picker.pickImage(source: source);
-      if (picked == null || !mounted) return;
-
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: picked.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        compressFormat: ImageCompressFormat.png,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Recortar figurinha',
-            toolbarColor: AppColors.emeraldDark,
-            toolbarWidgetColor: Colors.white,
-            activeControlsWidgetColor: AppColors.emerald,
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: true,
-          ),
-        ],
+      final croppedPath = await ImageHelper.pickAndCropSquareImage(
+        context,
+        source,
       );
+      if (croppedPath == null || !mounted) return;
 
-      if (cropped == null || !mounted) return;
-
-      _croppedSourcePath = cropped.path;
+      _croppedSourcePath = croppedPath;
       await _renderStickerPreview();
     } catch (error) {
       if (!mounted) return;
@@ -165,7 +149,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.add_reaction_outlined,
+                                  Icons.add_reaction_rounded,
                                   size: 48,
                                   color: secondaryText,
                                 ),
@@ -192,7 +176,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
                   onPressed: _isProcessing || _isSaving
                       ? null
                       : () => _pickAndCrop(ImageSource.gallery),
-                  icon: const Icon(Icons.photo_library_outlined),
+                  icon: const Icon(Icons.photo_library_rounded),
                   label: const Text('Galeria'),
                 ),
               ),
@@ -202,7 +186,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
                   onPressed: _isProcessing || _isSaving
                       ? null
                       : () => _pickAndCrop(ImageSource.camera),
-                  icon: const Icon(Icons.camera_alt_outlined),
+                  icon: const Icon(Icons.camera_alt_rounded),
                   label: const Text('Câmera'),
                 ),
               ),

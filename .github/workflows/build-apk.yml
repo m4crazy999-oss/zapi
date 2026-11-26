@@ -108,10 +108,7 @@ jobs:
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Zapi v1.0.${{ github.run_number }}
-          body: |
-            Build automático gerado a partir da branch `main`.
-            - Versão: `1.0.${{ github.run_number }}` (Build `${{ github.run_number }}`)
-            - Assinado com keystore de produção via GitHub Secrets.
+          body_path: release_notes.md
           files: build/app/outputs/flutter-apk/zapi-v1.0.${{ github.run_number }}.apk
           draft: false
           prerelease: false

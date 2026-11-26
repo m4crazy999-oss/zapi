@@ -9,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/image_helper.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../core/widgets/profile_banner.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../../../auth/domain/app_user.dart';
@@ -134,7 +135,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _handlePhotoSource(ImageSource source) async {
     try {
       setState(() => _isUploadingPhoto = true);
-      final compressedBytes = await ImageHelper.pickCropAndCompressAvatar(source);
+      final compressedBytes =
+          await ImageHelper.pickCropAndCompressAvatar(context, source);
       if (compressedBytes == null) {
         if (mounted) setState(() => _isUploadingPhoto = false);
         return;
@@ -201,7 +203,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
+                leading: const Icon(Icons.photo_camera_rounded),
                 title: const Text('Tirar foto com a câmera'),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -209,8 +211,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Escolher da galeria'),
+                leading: const Icon(Icons.photo_library_rounded),
+                title: const Text('Escolher foto ou GIF da galeria'),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   _handlePhotoSource(ImageSource.gallery);
@@ -407,27 +409,101 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Center(
-                          child: ZapiAvatar(
-                            displayName: user.displayName,
-                            photoBase64: user.photoBase64,
-                            photoUrl: user.photoUrl,
-                            radius: 56,
-                            showEditBadge: true,
-                            isLoading: _isUploadingPhoto,
-                            onTap: () => _showPhotoOptions(user),
-                          ),
+                        Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 52),
+                              child: ProfileBanner(
+                                preset: user.bannerPreset,
+                                height: 150,
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).scaffoldBackgroundColor,
+                                shape: BoxShape.circle,
+                              ),
+                              child: ZapiAvatar(
+                                displayName: user.displayName,
+                                photoBase64: user.photoBase64,
+                                photoUrl: user.photoUrl,
+                                radius: 52,
+                                showEditBadge: true,
+                                isLoading: _isUploadingPhoto,
+                                onTap: () => _showPhotoOptions(user),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         Text(
-                          'Toque na foto para alterar',
+                          'Toque na foto para alterar (aceita foto animada GIF/WebP)',
                           textAlign: TextAlign.center,
                           style: Theme.of(context)
                               .textTheme
                               .bodySmall
                               ?.copyWith(color: secondaryText),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Estilo do banner',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: secondaryText,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 44,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: AppConstants.bannerPresets.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 8),
+                            itemBuilder: (context, index) {
+                              final preset = AppConstants.bannerPresets[index];
+                              final selected = user.bannerPreset == preset.id;
+                              final palette =
+                                  ProfileBanner.paletteFor(preset.id);
+                              return ChoiceChip(
+                                selected: selected,
+                                showCheckmark: false,
+                                avatar: Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        palette.colors.first,
+                                        palette.colors.last,
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                label: Text(preset.label),
+                                onSelected: (_) async {
+                                  try {
+                                    await ref
+                                        .read(
+                                            profileControllerProvider.notifier)
+                                        .updateBannerPreset(preset.id);
+                                  } on AppException catch (e) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(e.message)),
+                                    );
+                                  }
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 18),
                         Card(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(

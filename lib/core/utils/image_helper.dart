@@ -3,62 +3,106 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../features/profile/presentation/screens/avatar_crop_screen.dart';
 import '../constants/app_constants.dart';
-import '../theme/app_colors.dart';
 import 'app_exceptions.dart';
+import 'media_processor.dart';
 
 class ImageHelper {
   ImageHelper._();
 
   static final ImagePicker _picker = ImagePicker();
+  static const _uuid = Uuid();
 
-  /// Seleciona foto (câmera ou galeria), recorta em 1:1 e comprime para <= 256x256
-  /// em WebP/JPEG abaixo de 100 KB para armazenamento direto em base64 no Firestore.
-  static Future<Uint8List?> pickCropAndCompressAvatar(ImageSource source) async {
-    final picked = await _picker.pickImage(
-      source: source,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      imageQuality: 90,
+  /// Seleciona foto (estática ou animada GIF/WebP), abre tela de confirmação
+  /// com botão inferior acessível e garante <= 100 KB em base64.
+  static Future<Uint8List?> pickCropAndCompressAvatar(
+    BuildContext context,
+    ImageSource source,
+  ) async {
+    final picked = source == ImageSource.camera
+        ? await _picker.pickImage(
+            source: source,
+            maxWidth: 1280,
+            maxHeight: 1280,
+            imageQuality: 92,
+          )
+        : await _picker.pickImage(source: source);
+    if (picked == null || !context.mounted) return null;
+
+    final rawBytes = await File(picked.path).readAsBytes();
+    final isAnimated = await MediaProcessor.isAnimatedImage(rawBytes);
+    if (!context.mounted) return null;
+
+    if (isAnimated) {
+      final preparedAnim =
+          await MediaProcessor.compressAnimatedAvatarIfNeeded(rawBytes);
+      if (!context.mounted) return null;
+      return AvatarCropScreen.open(
+        context,
+        imageBytes: preparedAnim,
+        title: 'Foto animada',
+        confirmLabel: 'Confirmar foto',
+        circularOverlay: true,
+        isAnimated: true,
+      );
+    }
+
+    final croppedBytes = await AvatarCropScreen.open(
+      context,
+      imageBytes: rawBytes,
+      title: 'Ajustar foto de perfil',
+      confirmLabel: 'Confirmar foto',
+      circularOverlay: true,
     );
-    if (picked == null) return null;
+    if (croppedBytes == null) return null;
 
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      maxWidth: AppConstants.maxProfilePhotoDimension,
-      maxHeight: AppConstants.maxProfilePhotoDimension,
-      compressFormat: ImageCompressFormat.jpg,
-      compressQuality: 92,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Recortar foto',
-          toolbarColor: AppColors.emerald,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: AppColors.emerald,
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
-          cropStyle: CropStyle.circle,
-          aspectRatioPresets: const [CropAspectRatioPreset.square],
-        ),
-      ],
-    );
-    if (cropped == null) return null;
-
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File(p.join(tempDir.path, 'avatar_${_uuid.v4()}.png'));
     try {
-      return await _compressAvatarUnderLimit(File(cropped.path));
+      await tempFile.writeAsBytes(croppedBytes, flush: true);
+      return await _compressAvatarUnderLimit(tempFile);
     } finally {
-      final croppedFile = File(cropped.path);
-      if (await croppedFile.exists()) {
-        await croppedFile.delete().catchError((_) => croppedFile);
+      if (await tempFile.exists()) {
+        await tempFile.delete().catchError((_) => tempFile);
       }
     }
   }
 
+  /// Seleciona e recorta imagem quadrada usando a tela própria com botão inferior.
+  static Future<String?> pickAndCropSquareImage(
+    BuildContext context,
+    ImageSource source, {
+    String title = 'Recortar figurinha',
+  }) async {
+    final picked = await _picker.pickImage(source: source);
+    if (picked == null || !context.mounted) return null;
+
+    final rawBytes = await File(picked.path).readAsBytes();
+    if (!context.mounted) return null;
+
+    final croppedBytes = await AvatarCropScreen.open(
+      context,
+      imageBytes: rawBytes,
+      title: title,
+      confirmLabel: 'Confirmar recorte',
+      circularOverlay: false,
+    );
+    if (croppedBytes == null) return null;
+
+    final tempDir = await getTemporaryDirectory();
+    final outPath = p.join(tempDir.path, 'crop_${_uuid.v4()}.png');
+    await File(outPath).writeAsBytes(croppedBytes, flush: true);
+    return outPath;
+  }
+
   static Future<Uint8List> _compressAvatarUnderLimit(File sourceFile) async {
-    const qualities = [82, 70, 58, 45, 34, 24];
+    const qualities = [84, 72, 60, 46, 34, 24];
     const dimensions = [256, 256, 256, 224, 192, 160];
 
     for (var i = 0; i < qualities.length; i++) {

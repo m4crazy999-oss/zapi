@@ -10,7 +10,6 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/validators.dart';
-import '../../../../core/widgets/update_dialog.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../profile/presentation/providers/profile_providers.dart';
@@ -24,7 +23,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _checkingUpdates = false;
   bool _sendingReset = false;
   bool _notificationsEnabled = true;
   bool _backgroundModeEnabled = true;
@@ -109,51 +107,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$label $value copiado!')),
     );
-  }
-
-  Future<void> _checkUpdatesManually() async {
-    if (_checkingUpdates) return;
-    setState(() => _checkingUpdates = true);
-    try {
-      final service = ref.read(appUpdateServiceProvider);
-      final update = await service.checkForUpdate(force: true);
-      if (!mounted) return;
-
-      if (update == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Você está com a versão mais recente.'),
-          ),
-        );
-        return;
-      }
-
-      await UpdateDialog.show(
-        context,
-        update: update,
-        updateService: service,
-      );
-    } on AppException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível verificar atualizações agora.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _checkingUpdates = false);
-      }
-    }
   }
 
   Future<void> _openChangePasswordDialog() async {
@@ -479,7 +432,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             child: Column(
               children: [
                 const ListTile(
-                  leading: Icon(Icons.verified_user_outlined),
+                  leading: Icon(Icons.verified_user_rounded),
                   title: Text('E-mail privado'),
                   subtitle: Text(
                     'Seu e-mail é visível apenas para você. Outras pessoas encontram você pelo ID ou @usuário.',
@@ -489,8 +442,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ListTile(
                   leading: Icon(
                     _notificationsEnabled
-                        ? Icons.notifications_active_outlined
-                        : Icons.notifications_off_outlined,
+                        ? Icons.notifications_active_rounded
+                        : Icons.notifications_off_rounded,
                     color: _notificationsEnabled
                         ? null
                         : Theme.of(context).colorScheme.error,
@@ -506,7 +459,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ),
                 const Divider(height: 1),
                 SwitchListTile(
-                  secondary: const Icon(Icons.mark_chat_unread_outlined),
+                  secondary: const Icon(Icons.mark_chat_unread_rounded),
                   title: const Text('Alertas com o app fechado'),
                   subtitle: const Text(
                     'Mantém o recebimento de mensagens ativo mesmo fora do aplicativo.',
@@ -588,32 +541,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
             child: Text(
-              'Sobre e atualizações',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: secondaryText,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.system_update_outlined),
-              title: const Text('Verificar atualizações'),
-              subtitle: Text('Versão $versionLabel'),
-              trailing: _checkingUpdates
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.chevron_right_rounded),
-              onTap: _checkingUpdates ? null : _checkUpdatesManually,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            child: Text(
               'Conta e segurança',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: secondaryText,
@@ -625,14 +552,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.person_outline_rounded),
-                  title: const Text('Editar perfil'),
-                  subtitle: const Text('Nome, @usuário, ID exclusivo e foto'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => context.push('/profile'),
-                ),
-                const Divider(height: 1),
-                ListTile(
                   enabled: !isAuthBusy,
                   leading: const Icon(Icons.password_rounded),
                   title: const Text('Alterar senha'),
@@ -643,7 +562,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 const Divider(height: 1),
                 ListTile(
                   enabled: !isAuthBusy && !_sendingReset,
-                  leading: const Icon(Icons.mark_email_read_outlined),
+                  leading: const Icon(Icons.mark_email_read_rounded),
                   title: const Text('Enviar e-mail de recuperação de senha'),
                   subtitle: const Text('Receba um link para redefinir sua senha'),
                   trailing: _sendingReset
@@ -666,7 +585,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ListTile(
                   enabled: !isAuthBusy,
                   leading: Icon(
-                    Icons.delete_forever_outlined,
+                    Icons.delete_forever_rounded,
                     color: Theme.of(context).colorScheme.error,
                   ),
                   title: Text(
@@ -685,6 +604,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             const SizedBox(height: 20),
             const Center(child: CircularProgressIndicator()),
           ],
+          const SizedBox(height: 20),
+          Text(
+            'Zapi — Versão $versionLabel',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: secondaryText,
+            ),
+          ),
           const SizedBox(height: 24),
         ],
       ),

@@ -38,10 +38,20 @@ class AppConstants {
 
   static const int maxImageDimension = 1280;
   static const int imageJpegQuality = 82;
-  static const int thumbnailMaxDimension = 180;
-  static const int thumbnailJpegQuality = 55;
-  static const int maxThumbnailBytes = 20 * 1024;
+  static const int thumbnailMaxDimension = 320;
+  static const int thumbnailJpegQuality = 72;
+  static const int maxThumbnailBytes = 26 * 1024;
   static const int maxChatImageBytes = 700 * 1024;
+
+  static const String defaultBannerPreset = 'aurora';
+  static const List<({String id, String label})> bannerPresets = [
+    (id: 'aurora', label: 'Aurora'),
+    (id: 'constellation', label: 'Estrelas'),
+    (id: 'waves', label: 'Ondas'),
+    (id: 'embers', label: 'Brasas'),
+    (id: 'mint', label: 'Menta'),
+    (id: 'midnight', label: 'Noite'),
+  ];
 
   static const int audioBitRate = 24000;
   static const int audioSampleRate = 24000;

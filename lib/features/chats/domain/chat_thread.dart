@@ -5,6 +5,8 @@ class ChatParticipantProfile {
     required this.uid,
     required this.displayName,
     required this.username,
+    this.about,
+    this.bannerPreset,
     this.photoBase64,
     this.photoUrl,
   });
@@ -12,6 +14,8 @@ class ChatParticipantProfile {
   final String uid;
   final String displayName;
   final String username;
+  final String? about;
+  final String? bannerPreset;
   final String? photoBase64;
   final String? photoUrl;
 
@@ -23,6 +27,8 @@ class ChatParticipantProfile {
       uid: uid,
       displayName: (map['displayName'] as String?) ?? 'Usuário Zapi',
       username: (map['username'] as String?) ?? '',
+      about: map['about'] as String?,
+      bannerPreset: map['bannerPreset'] as String?,
       photoBase64: map['photoBase64'] as String?,
       photoUrl: map['photoUrl'] as String?,
     );
@@ -32,6 +38,8 @@ class ChatParticipantProfile {
     return {
       'displayName': displayName,
       'username': username,
+      'about': about,
+      'bannerPreset': bannerPreset,
       'photoBase64': photoBase64,
       'photoUrl': photoUrl,
     };

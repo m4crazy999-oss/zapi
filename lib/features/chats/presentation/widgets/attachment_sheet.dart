@@ -5,7 +5,6 @@ import '../../../../core/theme/app_colors.dart';
 enum AttachmentAction {
   camera,
   gallery,
-  stickers,
 }
 
 class AttachmentSheet extends StatelessWidget {
@@ -39,7 +38,7 @@ class AttachmentSheet extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _AttachmentOption(
                   icon: Icons.camera_alt_rounded,
@@ -54,14 +53,6 @@ class AttachmentSheet extends StatelessWidget {
                   color: const Color(0xFF0284C7),
                   isDark: isDark,
                   onTap: () => Navigator.pop(context, AttachmentAction.gallery),
-                ),
-                _AttachmentOption(
-                  icon: Icons.sticky_note_2_rounded,
-                  label: 'Figurinhas',
-                  color: const Color(0xFFD97706),
-                  isDark: isDark,
-                  onTap: () =>
-                      Navigator.pop(context, AttachmentAction.stickers),
                 ),
               ],
             ),
@@ -93,13 +84,13 @@ class _AttachmentOption extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 58,
-              height: 58,
+              width: 60,
+              height: 60,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: isDark ? 0.22 : 0.14),
                 shape: BoxShape.circle,

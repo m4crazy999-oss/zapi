@@ -23,7 +23,8 @@ class ZapiApp extends ConsumerStatefulWidget {
 
 class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
   String? _activeSessionUid;
-  bool _updateDialogVisible = false;
+  AppReleaseUpdate? _mandatoryUpdate;
+  bool _isCheckingUpdate = false;
 
   @override
   void initState() {
@@ -35,6 +36,7 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
         ref.read(authStateProvider),
         ref.read(authRedirectHoldProvider),
       );
+      unawaited(_checkForUpdates());
     });
   }
 
@@ -51,10 +53,7 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       presence.setAppForeground(true);
       notifications.setAppForeground(true);
-      if (ref.read(firebaseAuthProvider).currentUser != null &&
-          !ref.read(authRedirectHoldProvider)) {
-        unawaited(_checkForUpdatesIfNeeded());
-      }
+      unawaited(_checkForUpdates());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden ||
@@ -85,28 +84,24 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
 
     ref.read(presenceServiceProvider).bindUser(uid);
     await ref.read(notificationServiceProvider).initializeForUser(uid);
-    if (!mounted || _activeSessionUid != uid) return;
-    unawaited(_checkForUpdatesIfNeeded());
   }
 
-  Future<void> _checkForUpdatesIfNeeded() async {
-    if (_updateDialogVisible) return;
-    final updateService = ref.read(appUpdateServiceProvider);
-    final update = await updateService.checkForUpdate(force: false);
-    if (!mounted || update == null || _updateDialogVisible) return;
-
-    final navContext = rootNavigatorKey.currentContext;
-    if (navContext == null || !navContext.mounted) return;
-
-    _updateDialogVisible = true;
+  Future<void> _checkForUpdates() async {
+    if (_isCheckingUpdate) return;
+    _isCheckingUpdate = true;
     try {
-      await UpdateDialog.show(
-        navContext,
-        update: update,
-        updateService: updateService,
-      );
+      final updateService = ref.read(appUpdateServiceProvider);
+      final update = await updateService.checkForUpdate();
+      if (!mounted) return;
+      if (update != null &&
+          (_mandatoryUpdate == null ||
+              update.remoteBuildNumber > _mandatoryUpdate!.remoteBuildNumber)) {
+        setState(() {
+          _mandatoryUpdate = update;
+        });
+      }
     } finally {
-      _updateDialogVisible = false;
+      _isCheckingUpdate = false;
     }
   }
 
@@ -139,6 +134,25 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: router,
+      builder: (context, child) {
+        final pendingUpdate = _mandatoryUpdate;
+        return Stack(
+          children: [
+            child ?? const SizedBox.shrink(),
+            if (pendingUpdate != null)
+              Positioned.fill(
+                child: Navigator(
+                  onGenerateRoute: (_) => MaterialPageRoute<void>(
+                    builder: (_) => UpdateRequiredScreen(
+                      update: pendingUpdate,
+                      updateService: ref.read(appUpdateServiceProvider),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

@@ -13,6 +13,7 @@ import '../../features/contacts/presentation/screens/add_contact_screen.dart';
 import '../../features/contacts/presentation/screens/contacts_screen.dart';
 import '../../features/home/presentation/screens/home_shell_screen.dart';
 import '../../features/home/presentation/screens/status_placeholder_screen.dart';
+import '../../features/profile/presentation/screens/peer_profile_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/stickers/presentation/screens/create_sticker_screen.dart';
@@ -142,6 +143,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final chatId = state.pathParameters['chatId'] ?? '';
           return ChatScreen(chatId: chatId);
+        },
+      ),
+      GoRoute(
+        path: '/chats/:chatId/profile',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final chatId = state.pathParameters['chatId'] ?? '';
+          return PeerProfileScreen(chatId: chatId);
         },
       ),
       GoRoute(

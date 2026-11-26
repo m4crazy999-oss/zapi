@@ -183,6 +183,74 @@ class MediaProcessor {
     }
   }
 
+  /// Detecta se os bytes representam um GIF ou WebP com múltiplos quadros.
+  static Future<bool> isAnimatedImage(Uint8List rawBytes) async {
+    return Isolate.run(() => _detectAnimatedInIsolate(rawBytes));
+  }
+
+  /// Redimensiona e comprime foto de perfil animada (GIF/WebP) para caber em 100 KB.
+  static Future<Uint8List> compressAnimatedAvatarIfNeeded(
+    Uint8List rawBytes,
+  ) async {
+    if (rawBytes.length <= AppConstants.maxProfilePhotoBytes) {
+      return rawBytes;
+    }
+    final compressed = await Isolate.run(
+      () => _compressAnimatedAvatarInIsolate(rawBytes),
+    );
+    if (compressed == null ||
+        compressed.length > AppConstants.maxProfilePhotoBytes) {
+      throw const AppException(
+        'A imagem animada é muito pesada. Escolha um GIF ou WebP menor.',
+      );
+    }
+    return compressed;
+  }
+
+  static bool _detectAnimatedInIsolate(Uint8List rawBytes) {
+    final gif = img.decodeGif(rawBytes);
+    if (gif != null && gif.numFrames > 1) return true;
+    final webp = img.decodeWebP(rawBytes);
+    if (webp != null && webp.numFrames > 1) return true;
+    return false;
+  }
+
+  static Uint8List? _compressAnimatedAvatarInIsolate(Uint8List rawBytes) {
+    final decoded = img.decodeGif(rawBytes) ?? img.decodeWebP(rawBytes);
+    if (decoded == null || decoded.numFrames <= 1) return null;
+
+    const targetSides = [160, 128, 96, 80];
+    const frameSteps = [1, 1, 2, 2];
+
+    for (var attempt = 0; attempt < targetSides.length; attempt++) {
+      final side = targetSides[attempt];
+      final step = frameSteps[attempt];
+      img.Image? out;
+
+      for (var i = 0; i < decoded.frames.length; i += step) {
+        final frame = decoded.frames[i];
+        final cropped = img.copyResizeCropSquare(
+          frame,
+          size: side,
+          interpolation: img.Interpolation.linear,
+        );
+        cropped.frameDuration = frame.frameDuration * step;
+        if (out == null) {
+          out = cropped;
+        } else {
+          out.addFrame(cropped);
+        }
+      }
+
+      if (out == null) continue;
+      final candidate = Uint8List.fromList(img.encodeGif(out));
+      if (candidate.length <= AppConstants.maxProfilePhotoBytes) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
   static _EncodedPair? _encodeImagePairInIsolate(Uint8List rawBytes) {
     final decoded = img.decodeImage(rawBytes);
     if (decoded == null) return null;
@@ -209,9 +277,9 @@ class MediaProcessor {
       }
     }
 
-    // Gera miniatura leve (< 20 KB) para carregar a lista de mensagens rapidamente.
-    const thumbSides = [180, 160, 140, 112];
-    const thumbQualities = [58, 46, 36, 26];
+    // Gera miniatura nítida (<= 26 KB) para exibição imediata sem borrão na conversa.
+    const thumbSides = [320, 260, 200, 140];
+    const thumbQualities = [72, 60, 48, 34];
     late Uint8List thumbBytes;
 
     for (var i = 0; i < thumbSides.length; i++) {

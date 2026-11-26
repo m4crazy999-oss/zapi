@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -60,8 +61,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _isCurrentlyTyping = false;
   bool _hasTextInput = false;
   bool _showStickerTray = false;
-  bool _isAddingContact = false;
   int _lastVisibleCount = 0;
+  String? _lastMarkedReadMsgId;
 
   Timer? _typingTimer;
   ReplyQuote? _replyingTo;
@@ -218,13 +219,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         );
   }
 
+  AppUser? _resolveCurrentUser(AppUser? loadedProfile) {
+    if (loadedProfile != null) return loadedProfile;
+    final authUser = ref.read(firebaseAuthProvider).currentUser;
+    if (authUser == null) return null;
+    final fallbackName = (authUser.displayName ?? '').trim().isNotEmpty
+        ? authUser.displayName!.trim()
+        : 'Usuário Zapi';
+    return AppUser(
+      uid: authUser.uid,
+      displayName: fallbackName,
+      username: '',
+      about: AppConstants.defaultAbout,
+    );
+  }
+
+  void _insertEmoji(String emoji) {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    final start =
+        selection.isValid ? selection.start.clamp(0, text.length) : text.length;
+    final end =
+        selection.isValid ? selection.end.clamp(0, text.length) : text.length;
+    final nextText = text.replaceRange(start, end, emoji);
+    _textController.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: start + emoji.length),
+    );
+    _onTextChanged(nextText);
+  }
+
   Future<void> _sendMessage({
     required AppUser? currentUser,
     required AppUser? peerUser,
     required ChatThread? thread,
   }) async {
     final text = _textController.text.trim();
-    if (text.isEmpty || _isSending || currentUser == null) return;
+    final effectiveSender = _resolveCurrentUser(currentUser);
+    if (text.isEmpty || _isSending || effectiveSender == null) return;
 
     final effectivePeer = _resolveEffectivePeer(peerUser, thread);
     final quote = _replyingTo;
@@ -240,7 +272,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     try {
       await ref.read(chatsRepositoryProvider).sendTextMessage(
             chatId: widget.chatId,
-            sender: currentUser,
+            sender: effectiveSender,
             recipient: effectivePeer,
             text: text,
             chatExists: thread != null,
@@ -269,7 +301,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     required AppUser? peerUser,
     required ChatThread? thread,
   }) async {
-    if (currentUser == null) return;
+    final effectiveSender = _resolveCurrentUser(currentUser);
+    if (effectiveSender == null) return;
     _focusNode.unfocus();
     final action = await AttachmentSheet.show(context);
     if (action == null || !mounted) return;
@@ -277,18 +310,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     switch (action) {
       case AttachmentAction.camera:
         await _pickCameraPhoto(
-          currentUser: currentUser,
+          currentUser: effectiveSender,
           peerUser: peerUser,
           thread: thread,
         );
       case AttachmentAction.gallery:
         await _pickGalleryPhotos(
-          currentUser: currentUser,
+          currentUser: effectiveSender,
           peerUser: peerUser,
           thread: thread,
         );
-      case AttachmentAction.stickers:
-        setState(() => _showStickerTray = true);
     }
   }
 
@@ -380,7 +411,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _handleRecordedVoice(String filePath, int durationMs) async {
-    final currentUser = ref.read(currentUserProfileProvider).value;
+    final currentUser =
+        _resolveCurrentUser(ref.read(currentUserProfileProvider).value);
     if (currentUser == null) return;
     final thread = ref.read(chatThreadProvider(widget.chatId)).value;
     final peerUser = ref.read(peerUserProfileProvider(_peerUid)).value;
@@ -422,46 +454,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       uid: peerUid,
       displayName: contact?.displayName ?? profile?.displayName ?? 'Usuário Zapi',
       username: contact?.username ?? profile?.username ?? '',
-      about: contact?.about ?? '',
+      about: contact?.about ?? profile?.about ?? '',
+      bannerPreset: profile?.bannerPreset ?? AppConstants.defaultBannerPreset,
       photoBase64: contact?.photoBase64 ?? profile?.photoBase64,
       photoUrl: contact?.photoUrl ?? profile?.photoUrl,
     );
-  }
-
-  Future<void> _addPeerToContacts({
-    required AppUser? peerUser,
-    required ChatThread? thread,
-  }) async {
-    if (_isAddingContact || _peerUid.isEmpty) return;
-    setState(() => _isAddingContact = true);
-    try {
-      final target = peerUser ??
-          _fallbackPeerUser(
-            peerUid: _peerUid,
-            thread: thread,
-          );
-      await ref
-          .read(contactsControllerProvider.notifier)
-          .addContact(targetUser: target);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${target.displayName} adicionado aos contatos!'),
-        ),
-      );
-    } on AppException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isAddingContact = false);
-      }
-    }
   }
 
   void _openImageViewer(ChatMessage message, String senderLabel) {
@@ -565,7 +562,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     ((message.assetPath?.isNotEmpty ?? false) ||
                         (message.mediaId?.isNotEmpty ?? false)))
                   ListTile(
-                    leading: const Icon(Icons.star_outline_rounded),
+                    leading: const Icon(Icons.star_rounded),
                     title: const Text('Adicionar às minhas figurinhas'),
                     onTap: () async {
                       Navigator.pop(sheetContext);
@@ -741,6 +738,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final isBlockedByPeer =
         (peerUser?.blockedUids.contains(_myUid) ?? false) ||
             (thread?.isBlockedBy(peerUid) ?? false);
+    final isBlockedByMe =
+        (currentUser?.blockedUids.contains(peerUid) ?? false) ||
+            (thread?.isBlockedBy(_myUid) ?? false);
 
     ref.listen<AsyncValue<List<ChatMessage>>>(
       chatMessagesProvider((chatId: widget.chatId, limit: _messageLimit)),
@@ -748,12 +748,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         final rawMessages = next.value;
         if (rawMessages == null) return;
 
-        if (_isLoadingMore || rawMessages.length < _messageLimit) {
+        final nextHasMore = rawMessages.length >= _messageLimit;
+        if (_isLoadingMore || _hasMore != nextHasMore) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             setState(() {
               _isLoadingMore = false;
-              _hasMore = rawMessages.length >= _messageLimit;
+              _hasMore = nextHasMore;
             });
           });
         }
@@ -775,7 +776,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         }
         _lastVisibleCount = visible.length;
 
-        if (_myUid.isNotEmpty) {
+        final latestIncoming = rawMessages
+            .where((m) => m.senderId != _myUid && !m.hasPendingWrites)
+            .firstOrNull;
+        final readToken =
+            '${latestIncoming?.id ?? ''}_${thread?.unreadFor(_myUid) ?? 0}';
+        if (_myUid.isNotEmpty && _lastMarkedReadMsgId != readToken) {
+          _lastMarkedReadMsgId = readToken;
           ref.read(chatsRepositoryProvider).markChatAsRead(
                 chatId: widget.chatId,
                 currentUid: _myUid,
@@ -786,24 +793,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       },
     );
 
-    final initialMessages = messagesAsync.value;
-    if (initialMessages != null &&
-        _myUid.isNotEmpty &&
-        thread != null &&
-        thread.unreadFor(_myUid) > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ref.read(chatsRepositoryProvider).markChatAsRead(
-              chatId: widget.chatId,
-              currentUid: _myUid,
-              messages: initialMessages,
-              thread: thread,
-            );
-      });
-    }
-
-    final showQuickAddContact =
-        savedContact == null && peerUid.isNotEmpty && peerUid != _myUid;
+    final cachedMessages = messagesAsync.value;
 
     return PopScope(
       canPop: !_showStickerTray,
@@ -815,68 +805,56 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       child: Scaffold(
         appBar: AppBar(
           titleSpacing: 0,
-          actions: [
-            if (showQuickAddContact)
-              IconButton(
-                tooltip: 'Adicionar aos contatos',
-                onPressed: _isAddingContact
-                    ? null
-                    : () => _addPeerToContacts(
-                          peerUser: peerUser,
-                          thread: thread,
+          title: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => context.push('/chats/${widget.chatId}/profile'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              child: Row(
+                children: [
+                  ZapiAvatar(
+                    displayName: peerName,
+                    photoBase64: peerPhotoBase64,
+                    photoUrl: peerPhoto,
+                    radius: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          peerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16.5,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                icon: _isAddingContact
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.person_add_alt_1_outlined),
-              ),
-          ],
-          title: Row(
-            children: [
-              ZapiAvatar(
-                displayName: peerName,
-                photoBase64: peerPhotoBase64,
-                photoUrl: peerPhoto,
-                radius: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      peerName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.w700,
-                      ),
+                        Text(
+                          statusLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isPeerTyping || presence.online
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: isPeerTyping || presence.online
+                                ? (isDark
+                                    ? AppColors.emeraldBright
+                                    : AppColors.emeraldDark)
+                                : secondaryText,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      statusLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isPeerTyping || presence.online
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                        color: isPeerTyping || presence.online
-                            ? (isDark
-                                ? AppColors.emeraldBright
-                                : AppColors.emeraldDark)
-                            : secondaryText,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         body: Column(
@@ -884,10 +862,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             Expanded(
               child: Stack(
                 children: [
-                  messagesAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (_, __) => Center(
+                  if (cachedMessages == null && messagesAsync.isLoading)
+                    const Center(child: CircularProgressIndicator())
+                  else if (cachedMessages == null && messagesAsync.hasError)
+                    Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
@@ -896,10 +874,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           style: TextStyle(color: secondaryText),
                         ),
                       ),
-                    ),
-                    data: (rawMessages) {
-                      final messages =
-                          _mergeMessages(rawMessages, pendingUploads);
+                    )
+                  else
+                    Builder(
+                      builder: (context) {
+                        final messages = _mergeMessages(
+                          cachedMessages ?? const [],
+                          pendingUploads,
+                        );
 
                       if (messages.isEmpty) {
                         return Center(
@@ -1045,9 +1027,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                             ],
                           );
                         },
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
                   if (!_isAtBottom || _hasNewBelow)
                     Positioned(
                       right: 16,
@@ -1084,17 +1066,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 ],
               ),
             ),
-            if (isBlockedByPeer)
+            if (isBlockedByPeer || isBlockedByMe)
               SafeArea(
                 top: false,
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                  child: Text(
-                    'Você não pode enviar mensagens para esta conversa.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: secondaryText, fontSize: 13.5),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          isBlockedByMe
+                              ? 'Você bloqueou este contato.'
+                              : 'Você não pode enviar mensagens para esta conversa.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: secondaryText, fontSize: 13.5),
+                        ),
+                      ),
+                      if (isBlockedByMe) ...[
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () =>
+                              context.push('/chats/${widget.chatId}/profile'),
+                          child: const Text('Desbloquear'),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               )
@@ -1140,7 +1142,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                   prefixIcon: IconButton(
                                     tooltip: _showStickerTray
                                         ? 'Teclado'
-                                        : 'Figurinhas',
+                                        : 'Emojis e figurinhas',
                                     onPressed: () {
                                       if (_showStickerTray) {
                                         setState(() => _showStickerTray = false);
@@ -1153,41 +1155,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                     icon: Icon(
                                       _showStickerTray
                                           ? Icons.keyboard_rounded
-                                          : Icons.sticky_note_2_outlined,
+                                          : Icons.sentiment_satisfied_alt_rounded,
                                       color: _showStickerTray
                                           ? AppColors.emerald
                                           : secondaryText,
                                     ),
                                   ),
-                                  suffixIcon: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'Anexar mídia',
-                                        onPressed: () => _openAttachmentMenu(
-                                          currentUser: currentUser,
-                                          peerUser: peerUser,
-                                          thread: thread,
-                                        ),
-                                        icon: Icon(
-                                          Icons.attach_file_rounded,
-                                          color: secondaryText,
-                                        ),
-                                      ),
-                                      if (!_hasTextInput)
-                                        IconButton(
-                                          tooltip: 'Câmera',
-                                          onPressed: () => _pickCameraPhoto(
-                                            currentUser: currentUser,
-                                            peerUser: peerUser,
-                                            thread: thread,
-                                          ),
-                                          icon: Icon(
-                                            Icons.camera_alt_outlined,
-                                            color: secondaryText,
-                                          ),
-                                        ),
-                                    ],
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Anexar mídia',
+                                    onPressed: () => _openAttachmentMenu(
+                                      currentUser: currentUser,
+                                      peerUser: peerUser,
+                                      thread: thread,
+                                    ),
+                                    icon: Icon(
+                                      Icons.attach_file_rounded,
+                                      color: secondaryText,
+                                    ),
                                   ),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(24),
@@ -1262,8 +1246,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       ),
                     if (_showStickerTray && !_voiceController.isRecording)
                       StickerTray(
+                        onEmojiSelected: _insertEmoji,
                         onStickerSelected: (sticker) async {
-                          if (currentUser == null) return;
+                          final effectiveSender =
+                              _resolveCurrentUser(currentUser);
+                          if (effectiveSender == null) return;
                           final effectivePeer =
                               _resolveEffectivePeer(peerUser, thread);
                           final quote = _replyingTo;
@@ -1275,7 +1262,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 .read(mediaUploadManagerProvider.notifier)
                                 .sendSticker(
                                   chatId: widget.chatId,
-                                  sender: currentUser,
+                                  sender: effectiveSender,
                                   recipient: effectivePeer,
                                   sticker: sticker,
                                   chatExists: thread != null,

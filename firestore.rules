@@ -108,7 +108,7 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly([
           'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
-          'about', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
+          'about', 'bannerPreset', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
         ])
         && data.uid == uid
         && data.displayName is string
@@ -120,6 +120,7 @@ service cloud.firestore {
         && (data.get('photoUrl', null) == null || data.photoUrl is string)
         && data.about is string
         && data.about.size() <= 140
+        && (!('bannerPreset' in data) || data.bannerPreset == null || (data.bannerPreset is string && data.bannerPreset.size() <= 32))
         && data.createdAt is timestamp
         && data.lastSeen is timestamp
         && (!('blockedUids' in data) || data.blockedUids is list)
@@ -131,7 +132,7 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly([
           'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
-          'about', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
+          'about', 'bannerPreset', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
         ])
         && data.uid == resource.data.uid
         && data.createdAt == resource.data.createdAt
@@ -150,6 +151,7 @@ service cloud.firestore {
         && (data.get('photoUrl', null) == null || data.photoUrl is string)
         && data.about is string
         && data.about.size() <= 140
+        && (!('bannerPreset' in data) || data.bannerPreset == null || (data.bannerPreset is string && data.bannerPreset.size() <= 32))
         && data.lastSeen is timestamp
         && (!('blockedUids' in data) || data.blockedUids is list)
         && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string);

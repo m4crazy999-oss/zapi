@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/presentation/providers/auth_providers.dart';
 import '../../features/chats/domain/chat_thread.dart';
 import '../constants/app_constants.dart';
+import 'chat_preferences_service.dart';
 
 final FlutterLocalNotificationsPlugin zapiLocalNotifications =
     FlutterLocalNotificationsPlugin();
@@ -21,8 +22,10 @@ class NotificationService {
   NotificationService({
     required FirebaseAuth auth,
     required FirebaseFirestore firestore,
+    bool Function(String chatId)? isChatMuted,
   })  : _auth = auth,
-        _firestore = firestore {
+        _firestore = firestore,
+        _isChatMuted = isChatMuted {
     if (Platform.isAndroid) {
       _bgChannel.setMethodCallHandler((call) async {
         if (call.method == 'openChat') {
@@ -40,6 +43,7 @@ class NotificationService {
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  final bool Function(String chatId)? _isChatMuted;
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chatsSub;
   final Map<String, String> _lastNotifiedMessageByChat = {};
@@ -279,8 +283,9 @@ class NotificationService {
             now.difference(thread.lastMessageAt!).inSeconds.abs() <= 90;
         final isViewingThisChat =
             _isAppForeground && _activeChatId == thread.chatId;
+        final isMuted = _isChatMuted?.call(thread.chatId) ?? false;
 
-        if (isIncomingUnread && isFresh && !isViewingThisChat) {
+        if (isIncomingUnread && isFresh && !isViewingThisChat && !isMuted) {
           if (!_isAppForeground && await isBackgroundServiceRunning()) {
             continue;
           }
@@ -321,6 +326,10 @@ class NotificationService {
       _lastNotifiedMessageByChat[thread.chatId] = msgId;
 
       if (thread.unreadFor(currentUid) <= 0) {
+        continue;
+      }
+
+      if (_isChatMuted?.call(thread.chatId) ?? false) {
         continue;
       }
 
@@ -439,6 +448,7 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
   final service = NotificationService(
     auth: ref.watch(firebaseAuthProvider),
     firestore: ref.watch(firebaseFirestoreProvider),
+    isChatMuted: (chatId) => ref.read(chatPreferencesProvider).isMuted(chatId),
   );
   ref.onDispose(() {
     service.dispose();
