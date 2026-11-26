@@ -32,7 +32,7 @@ class MessageStatusIcon extends StatelessWidget {
     switch (status) {
       case MessageStatus.failed:
         return Icon(
-          Icons.error_outline_rounded,
+          Icons.error_rounded,
           size: size,
           color: Theme.of(context).colorScheme.error,
         );
@@ -339,7 +339,7 @@ class _StickerBubble extends StatelessWidget {
                       errorBuilder: (_, __, ___) => const SizedBox(
                         width: 148,
                         height: 148,
-                        child: Icon(Icons.sticky_note_2_outlined, size: 54),
+                        child: Icon(Icons.sticky_note_2_rounded, size: 54),
                       ),
                     )
                   : ZapiStickerImage(
@@ -866,24 +866,37 @@ class _AudioBubbleContentState extends ConsumerState<_AudioBubbleContent> {
                   children: [
                     LayoutBuilder(
                       builder: (context, constraints) {
+                        void seekAt(double dx) {
+                          if (!isActive ||
+                              totalDuration <= Duration.zero ||
+                              constraints.maxWidth <= 0) {
+                            return;
+                          }
+                          final fraction =
+                              (dx / constraints.maxWidth).clamp(0.0, 1.0);
+                          final target = Duration(
+                            milliseconds:
+                                (totalDuration.inMilliseconds * fraction)
+                                    .round(),
+                          );
+                          ref
+                              .read(audioPlaybackProvider.notifier)
+                              .seek(message.id, target);
+                        }
+
                         return GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTapDown: isActive && totalDuration > Duration.zero
-                              ? (details) {
-                                  final fraction = (details.localPosition.dx /
-                                          constraints.maxWidth)
-                                      .clamp(0.0, 1.0);
-                                  final target = Duration(
-                                    milliseconds:
-                                        (totalDuration.inMilliseconds *
-                                                fraction)
-                                            .round(),
-                                  );
-                                  ref
-                                      .read(audioPlaybackProvider.notifier)
-                                      .seek(message.id, target);
-                                }
+                              ? (details) => seekAt(details.localPosition.dx)
                               : null,
+                          onHorizontalDragStart:
+                              isActive && totalDuration > Duration.zero
+                                  ? (details) => seekAt(details.localPosition.dx)
+                                  : null,
+                          onHorizontalDragUpdate:
+                              isActive && totalDuration > Duration.zero
+                                  ? (details) => seekAt(details.localPosition.dx)
+                                  : null,
                           child: SizedBox(
                             height: 26,
                             child: Row(

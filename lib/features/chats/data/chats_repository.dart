@@ -117,6 +117,7 @@ class ChatsRepository {
         type: MessageTypes.text,
         text: cleanText,
       ),
+      lastMessageType: MessageTypes.text,
     );
   }
 
@@ -204,6 +205,7 @@ class ChatsRepository {
         text: cleanCaption,
         durationMs: durationMs,
       ),
+      lastMessageType: type,
     );
   }
 
@@ -254,6 +256,7 @@ class ChatsRepository {
     required int clientCreatedAt,
     required Map<String, dynamic> messagePayload,
     required String preview,
+    required String lastMessageType,
     String? mediaId,
     Map<String, dynamic>? mediaPayload,
   }) async {
@@ -311,6 +314,7 @@ class ChatsRepository {
             resolvedRecipient.uid: false,
           },
           'lastMessage': preview,
+          'lastMessageType': lastMessageType,
           'lastMessageId': messageId,
           'lastMessageSenderId': sender.uid,
           'lastMessageStatus': 'sent',
@@ -331,6 +335,7 @@ class ChatsRepository {
         final updates = <String, dynamic>{
           'participantProfiles.${sender.uid}': senderProfile,
           'lastMessage': preview,
+          'lastMessageType': lastMessageType,
           'lastMessageId': messageId,
           'lastMessageSenderId': sender.uid,
           'lastMessageStatus': 'sent',
@@ -624,6 +629,7 @@ class ChatsRepository {
       if (isLastMessage) {
         batch.update(chatRef, {
           'lastMessage': 'Mensagem apagada',
+          'lastMessageType': MessageTypes.text,
         });
       }
       await batch.commit();

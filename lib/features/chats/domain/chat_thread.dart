@@ -57,6 +57,7 @@ class ChatThread {
     required this.typingAt,
     required this.blockedBy,
     this.lastMessageId,
+    this.lastMessageType,
     this.lastMessageSenderId,
     this.lastMessageAt,
     this.hasPendingWrites = false,
@@ -67,6 +68,7 @@ class ChatThread {
   final Map<String, ChatParticipantProfile> participantProfiles;
   final String lastMessage;
   final String? lastMessageId;
+  final String? lastMessageType;
   final String? lastMessageSenderId;
   final String lastMessageStatus;
   final DateTime? lastMessageAt;
@@ -160,6 +162,7 @@ class ChatThread {
       participantProfiles: profiles,
       lastMessage: (data['lastMessage'] as String?) ?? '',
       lastMessageId: data['lastMessageId'] as String?,
+      lastMessageType: data['lastMessageType'] as String?,
       lastMessageSenderId: data['lastMessageSenderId'] as String?,
       lastMessageStatus: (data['lastMessageStatus'] as String?) ?? 'sent',
       lastMessageAt: (data['lastMessageAt'] as Timestamp?)?.toDate() ??

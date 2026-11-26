@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
@@ -34,125 +33,11 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     context.push('/chats/$chatId');
   }
 
-  Future<void> _showEditNicknameDialog(AppContact contact) async {
-    final updated = await showDialog<String>(
-      context: context,
-      builder: (_) => _EditNicknameDialog(contact: contact),
-    );
-    if (updated == null) return;
-
-    try {
-      await ref.read(contactsControllerProvider.notifier).updateNickname(
-            contactUid: contact.contactUid,
-            nickname: updated,
-          );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Apelido atualizado!')),
-      );
-    } on AppException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
-  }
-
-  Future<void> _confirmRemoveContact(AppContact contact) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Remover contato'),
-        content: Text(
-          'Remover ${contact.effectiveName} da sua lista de contatos? As conversas existentes não serão apagadas.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Remover'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    try {
-      await ref
-          .read(contactsControllerProvider.notifier)
-          .removeContact(contact.contactUid);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${contact.effectiveName} removido.')),
-      );
-    } on AppException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
-  }
-
-  void _showContactOptions(AppContact contact) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.chat_bubble_rounded),
-                title: const Text('Enviar mensagem'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openChat(contact);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_rounded),
-                title: const Text('Editar apelido local'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _showEditNicknameDialog(contact);
-                },
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.person_remove_rounded,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                title: Text(
-                  'Remover contato',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _confirmRemoveContact(contact);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
+  void _openPeerProfile(AppContact contact) {
+    final myUid = ref.read(firebaseAuthProvider).currentUser?.uid;
+    if (myUid == null) return;
+    final chatId = ChatIdHelper.buildDirectChatId(myUid, contact.contactUid);
+    context.push('/chats/$chatId/profile');
   }
 
   @override
@@ -309,12 +194,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: secondaryText, fontSize: 13.5),
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.more_vert_rounded),
-                        onPressed: () => _showContactOptions(contact),
-                      ),
                       onTap: () => _openChat(contact),
-                      onLongPress: () => _showContactOptions(contact),
+                      onLongPress: () => _openPeerProfile(contact),
                     );
                   },
                 );
@@ -323,67 +204,6 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _EditNicknameDialog extends StatefulWidget {
-  const _EditNicknameDialog({required this.contact});
-
-  final AppContact contact;
-
-  @override
-  State<_EditNicknameDialog> createState() => _EditNicknameDialogState();
-}
-
-class _EditNicknameDialogState extends State<_EditNicknameDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.contact.nickname ?? '');
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Apelido do contato'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Nome original: ${widget.contact.displayName} (@${widget.contact.username})',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _controller,
-            maxLength: 50,
-            decoration: const InputDecoration(
-              labelText: 'Apelido local',
-              hintText: 'Deixe vazio para usar o nome original',
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _controller.text),
-          child: const Text('Salvar'),
-        ),
-      ],
     );
   }
 }

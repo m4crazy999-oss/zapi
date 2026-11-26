@@ -153,6 +153,49 @@ class ProfileRepository {
     }
   }
 
+  Future<void> uploadProfileBanner({
+    required String uid,
+    required Uint8List bytes,
+  }) async {
+    if (bytes.length > AppConstants.maxProfileBannerBytes) {
+      throw const AppException(
+        'O banner selecionado é muito grande. Tente escolher outra imagem ou GIF.',
+      );
+    }
+
+    try {
+      final encoded = base64Encode(bytes);
+      if (encoded.length > AppConstants.maxProfileBannerBase64Chars) {
+        throw const AppException(
+          'O banner selecionado é muito grande. Tente escolher outra imagem ou GIF.',
+        );
+      }
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(uid)
+          .update({
+        'bannerBase64': encoded,
+        'lastSeen': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
+  Future<void> removeProfileBanner(String uid) async {
+    try {
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(uid)
+          .update({
+        'bannerBase64': null,
+        'lastSeen': FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
   Future<void> updateBannerPreset({
     required String uid,
     required String bannerPreset,

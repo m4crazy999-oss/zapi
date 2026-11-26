@@ -102,7 +102,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                         const SizedBox(height: 12),
                         const Center(
                           child: Icon(
-                            Icons.mark_email_read_outlined,
+                            Icons.mark_email_read_rounded,
                             size: 64,
                             color: AppColors.emerald,
                           ),
@@ -177,7 +177,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                             controller: _emailController,
                             label: 'E-mail cadastrado',
                             hint: 'seu@email.com',
-                            prefixIcon: Icons.email_outlined,
+                            prefixIcon: Icons.email_rounded,
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.done,
                             enabled: !_submitting,

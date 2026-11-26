@@ -163,7 +163,7 @@ class _StickerFallback extends StatelessWidget {
       width: size,
       height: size,
       child: Icon(
-        Icons.sticky_note_2_outlined,
+        Icons.sticky_note_2_rounded,
         size: size * 0.42,
         color: Theme.of(context).colorScheme.outline,
       ),

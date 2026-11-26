@@ -122,6 +122,31 @@ class ProfileController extends AsyncNotifier<void> {
     }
   }
 
+  Future<void> uploadBanner(Uint8List bytes) async {
+    final user = ref.read(firebaseAuthProvider).currentUser;
+    if (user == null) return;
+
+    try {
+      await ref.read(profileRepositoryProvider).uploadProfileBanner(
+            uid: user.uid,
+            bytes: bytes,
+          );
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
+  Future<void> removeBanner() async {
+    final user = ref.read(firebaseAuthProvider).currentUser;
+    if (user == null) return;
+
+    try {
+      await ref.read(profileRepositoryProvider).removeProfileBanner(user.uid);
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
   Future<void> updateBannerPreset(String bannerPreset) async {
     final user = ref.read(firebaseAuthProvider).currentUser;
     if (user == null) return;

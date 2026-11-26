@@ -137,4 +137,93 @@ class ImageHelper {
       'A foto selecionada é muito grande. Tente escolher outra imagem.',
     );
   }
+
+  /// Seleciona imagem estática ou GIF animado da galeria para o banner,
+  /// comprime respeitando o limite de 320 KB e abre confirmação em tela cheia.
+  static Future<Uint8List?> pickCropAndCompressBanner(
+    BuildContext context,
+  ) async {
+    final picked = await _picker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !context.mounted) return null;
+
+    final rawBytes = await File(picked.path).readAsBytes();
+    final isAnimated = await MediaProcessor.isAnimatedImage(rawBytes);
+    if (!context.mounted) return null;
+
+    if (isAnimated) {
+      final preparedAnim =
+          await MediaProcessor.compressAnimatedBannerIfNeeded(rawBytes);
+      if (!context.mounted) return null;
+      return AvatarCropScreen.open(
+        context,
+        imageBytes: preparedAnim,
+        title: 'Banner animado',
+        confirmLabel: 'Confirmar banner',
+        circularOverlay: false,
+        isAnimated: true,
+        aspectRatio: 16 / 10,
+      );
+    }
+
+    final croppedBytes = await AvatarCropScreen.open(
+      context,
+      imageBytes: rawBytes,
+      title: 'Ajustar banner',
+      confirmLabel: 'Confirmar banner',
+      circularOverlay: false,
+      aspectRatio: 16 / 10,
+    );
+    if (croppedBytes == null) return null;
+
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File(p.join(tempDir.path, 'banner_${_uuid.v4()}.png'));
+    try {
+      await tempFile.writeAsBytes(croppedBytes, flush: true);
+      return await _compressBannerUnderLimit(tempFile);
+    } finally {
+      if (await tempFile.exists()) {
+        await tempFile.delete().catchError((_) => tempFile);
+      }
+    }
+  }
+
+  static Future<Uint8List> _compressBannerUnderLimit(File sourceFile) async {
+    const qualities = [86, 76, 66, 54, 42, 32];
+    const widths = [960, 960, 840, 720, 640, 540];
+
+    for (var i = 0; i < qualities.length; i++) {
+      final w = widths[i];
+      final h = (w * 10 / 16).round();
+
+      final webpBytes = await FlutterImageCompress.compressWithFile(
+        sourceFile.absolute.path,
+        quality: qualities[i],
+        minWidth: w,
+        minHeight: h,
+        format: CompressFormat.webp,
+      );
+      if (webpBytes != null &&
+          webpBytes.isNotEmpty &&
+          webpBytes.length <= AppConstants.maxProfileBannerBytes) {
+        return Uint8List.fromList(webpBytes);
+      }
+
+      final jpegBytes = await FlutterImageCompress.compressWithFile(
+        sourceFile.absolute.path,
+        quality: qualities[i],
+        minWidth: w,
+        minHeight: h,
+        format: CompressFormat.jpeg,
+      );
+      if (jpegBytes != null &&
+          jpegBytes.isNotEmpty &&
+          jpegBytes.length <= AppConstants.maxProfileBannerBytes) {
+        return Uint8List.fromList(jpegBytes);
+      }
+    }
+
+    throw const AppException(
+      'A imagem selecionada ficou grande demais para o banner. Tente escolher outra.',
+    );
+  }
 }

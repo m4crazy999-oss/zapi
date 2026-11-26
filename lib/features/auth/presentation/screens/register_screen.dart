@@ -171,7 +171,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       controller: _emailController,
                       label: 'E-mail',
                       hint: 'seu@email.com',
-                      prefixIcon: Icons.email_outlined,
+                      prefixIcon: Icons.email_rounded,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       enabled: !_submitting,

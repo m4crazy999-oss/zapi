@@ -33,6 +33,9 @@ class AppConstants {
   // Limites internos de mídia e perfil
   static const int maxProfilePhotoDimension = 256;
   static const int maxProfilePhotoBytes = 100 * 1024;
+  static const int maxProfileBannerWidth = 960;
+  static const int maxProfileBannerBytes = 320 * 1024;
+  static const int maxProfileBannerBase64Chars = 440000;
   static const int maxDisplayNameLength = 50;
   static const int maxAboutLength = 140;
 
@@ -44,14 +47,6 @@ class AppConstants {
   static const int maxChatImageBytes = 700 * 1024;
 
   static const String defaultBannerPreset = 'aurora';
-  static const List<({String id, String label})> bannerPresets = [
-    (id: 'aurora', label: 'Aurora'),
-    (id: 'constellation', label: 'Estrelas'),
-    (id: 'waves', label: 'Ondas'),
-    (id: 'embers', label: 'Brasas'),
-    (id: 'mint', label: 'Menta'),
-    (id: 'midnight', label: 'Noite'),
-  ];
 
   static const int audioBitRate = 24000;
   static const int audioSampleRate = 24000;

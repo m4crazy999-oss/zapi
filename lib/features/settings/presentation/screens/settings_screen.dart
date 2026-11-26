@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -23,7 +22,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _sendingReset = false;
   bool _notificationsEnabled = true;
   bool _backgroundModeEnabled = true;
   bool _ignoringBattery = true;
@@ -100,19 +98,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         .requestIgnoreBatteryOptimizations();
   }
 
-  Future<void> _copyPublicId(String value, String label) async {
-    await Clipboard.setData(ClipboardData(text: value));
-    await HapticFeedback.lightImpact();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label $value copiado!')),
-    );
-  }
-
   Future<void> _openChangePasswordDialog() async {
     final result = await showDialog<({String current, String next})>(
       context: context,
-      builder: (_) => const _ChangePasswordDialog(),
+      builder: (_) => _ChangePasswordDialog(
+        onForgotPassword: _sendResetLinkToMyEmail,
+      ),
     );
     if (result == null) return;
 
@@ -145,7 +136,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   Future<void> _sendResetLinkToMyEmail() async {
-    if (_sendingReset) return;
     final email = ref.read(privateAccountEmailProvider).value?.trim() ??
         ref.read(firebaseAuthProvider).currentUser?.email?.trim() ??
         '';
@@ -157,7 +147,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       return;
     }
 
-    setState(() => _sendingReset = true);
     try {
       await ref.read(authControllerProvider.notifier).sendPasswordReset(email);
       if (!mounted) return;
@@ -184,10 +173,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() => _sendingReset = false);
-      }
     }
   }
 
@@ -276,59 +261,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    final accent = isDark ? AppColors.emeraldBright : AppColors.emeraldDark;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Configurações')),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        children: [
-          profileAsync.when(
-            loading: () => const Card(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ),
-            error: (_, __) => Card(
-              child: ListTile(
-                leading: const Icon(Icons.person_outline_rounded),
-                title: const Text('Meu perfil e ID'),
-                subtitle: const Text('Toque para abrir e sincronizar seu perfil'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => context.push('/profile'),
-              ),
-            ),
-            data: (user) {
-              if (user == null) {
-                return Card(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+            children: [
+              profileAsync.when(
+                loading: () => const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                ),
+                error: (_, __) => Card(
                   child: ListTile(
-                    leading: const Icon(Icons.person_outline_rounded),
-                    title: const Text('Concluir perfil e gerar ID'),
-                    subtitle: const Text(
-                      'Toque para criar seus dados de perfil e visualizar seu ID.',
-                    ),
+                    leading: const Icon(Icons.person_rounded),
+                    title: const Text('Meu perfil'),
+                    subtitle: const Text('Toque para editar seus dados e ID'),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => context.push('/profile'),
                   ),
-                );
-              }
-              final hasPublicId = user.publicId.trim().isNotEmpty;
-              return Card(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => context.push('/profile'),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                ),
+                data: (user) {
+                  if (user == null) {
+                    return Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.person_rounded),
+                        title: const Text('Concluir perfil'),
+                        subtitle: const Text(
+                          'Toque para finalizar seu perfil e gerar seu ID.',
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => context.push('/profile'),
+                      ),
+                    );
+                  }
+                  return Card(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => context.push('/profile'),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
                           children: [
                             ZapiAvatar(
                               displayName: user.displayName,
                               photoBase64: user.photoBase64,
                               photoUrl: user.photoUrl,
-                              radius: 30,
+                              radius: 28,
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -348,280 +333,242 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                                   Text(
                                     '@${user.username}',
                                     style: TextStyle(
-                                      color: isDark
-                                          ? AppColors.emeraldBright
-                                          : AppColors.emeraldDark,
+                                      color: accent,
                                       fontWeight: FontWeight.w600,
                                       fontSize: 13.5,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    user.about,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: secondaryText,
-                                      fontSize: 13,
+                                  if (user.about.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      user.about.trim(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: secondaryText,
+                                        fontSize: 13,
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),
-                            const Icon(Icons.chevron_right_rounded),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: secondaryText,
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.qr_code_2_rounded,
-                              size: 18,
-                              color: isDark
-                                  ? AppColors.emeraldBright
-                                  : AppColors.emeraldDark,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                hasPublicId
-                                    ? 'ID exclusivo: ${user.publicId}'
-                                    : 'ID exclusivo pendente — toque para gerar',
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
+              _SectionTitle(label: 'Preferências', color: secondaryText),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        _notificationsEnabled
+                            ? Icons.notifications_active_rounded
+                            : Icons.notifications_off_rounded,
+                        color: _notificationsEnabled
+                            ? accent
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                      title: const Text('Notificações'),
+                      subtitle: Text(
+                        _notificationsEnabled
+                            ? 'Ativadas para novas mensagens'
+                            : 'Desativadas — toque para ativar',
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        color: secondaryText,
+                      ),
+                      onTap: _handleNotificationsTap,
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      secondary: Icon(
+                        Icons.mark_chat_unread_rounded,
+                        color: accent,
+                      ),
+                      title: const Text('Alertas com o app fechado'),
+                      subtitle: const Text(
+                        'Mantém o aviso de novas mensagens sempre ativo.',
+                      ),
+                      value: _backgroundModeEnabled,
+                      onChanged: _toggleBackgroundMode,
+                    ),
+                    if (!_ignoringBattery) ...[
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: Icon(
+                          Icons.battery_saver_rounded,
+                          color: accent,
+                        ),
+                        title: const Text('Permitir sem restrição de bateria'),
+                        subtitle: const Text(
+                          'Evita atrasos nos avisos com a tela desligada.',
+                        ),
+                        trailing: Icon(
+                          Icons.chevron_right_rounded,
+                          color: secondaryText,
+                        ),
+                        onTap: _requestBatteryExemption,
+                      ),
+                    ],
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.palette_rounded,
+                                size: 20,
+                                color: accent,
+                              ),
+                              const SizedBox(width: 12),
+                              const Text(
+                                'Tema',
                                 style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  color: hasPublicId ? null : secondaryText,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 15.5,
                                 ),
                               ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<ThemeMode>(
+                              showSelectedIcon: false,
+                              segments: const [
+                                ButtonSegment(
+                                  value: ThemeMode.system,
+                                  icon: Icon(Icons.brightness_auto_rounded,
+                                      size: 18),
+                                  label: Text('Sistema'),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.light,
+                                  icon: Icon(Icons.light_mode_rounded, size: 18),
+                                  label: Text('Claro'),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.dark,
+                                  icon: Icon(Icons.dark_mode_rounded, size: 18),
+                                  label: Text('Escuro'),
+                                ),
+                              ],
+                              selected: {themeMode},
+                              onSelectionChanged: (selection) {
+                                ref
+                                    .read(themeModeProvider.notifier)
+                                    .setThemeMode(selection.first);
+                              },
                             ),
-                            TextButton.icon(
-                              onPressed: hasPublicId
-                                  ? () => _copyPublicId(user.publicId, 'ID')
-                                  : () => context.push('/profile'),
-                              icon: Icon(
-                                hasPublicId
-                                    ? Icons.copy_rounded
-                                    : Icons.auto_fix_high_rounded,
-                                size: 16,
-                              ),
-                              label: Text(hasPublicId ? 'Copiar' : 'Gerar'),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            child: Text(
-              'Privacidade e avisos',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: secondaryText,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-          Card(
-            child: Column(
-              children: [
-                const ListTile(
-                  leading: Icon(Icons.verified_user_rounded),
-                  title: Text('E-mail privado'),
-                  subtitle: Text(
-                    'Seu e-mail é visível apenas para você. Outras pessoas encontram você pelo ID ou @usuário.',
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: Icon(
-                    _notificationsEnabled
-                        ? Icons.notifications_active_rounded
-                        : Icons.notifications_off_rounded,
-                    color: _notificationsEnabled
-                        ? null
-                        : Theme.of(context).colorScheme.error,
-                  ),
-                  title: const Text('Notificações'),
-                  subtitle: Text(
-                    _notificationsEnabled
-                        ? 'Ativadas. Você recebe alertas de novas mensagens.'
-                        : 'Desativadas. Toque aqui para ativar nas configurações.',
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: _handleNotificationsTap,
-                ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  secondary: const Icon(Icons.mark_chat_unread_rounded),
-                  title: const Text('Alertas com o app fechado'),
-                  subtitle: const Text(
-                    'Mantém o recebimento de mensagens ativo mesmo fora do aplicativo.',
-                  ),
-                  value: _backgroundModeEnabled,
-                  onChanged: _toggleBackgroundMode,
-                ),
-                if (!_ignoringBattery) ...[
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.battery_saver_rounded),
-                    title: const Text('Permitir sem restrição de bateria'),
-                    subtitle: const Text(
-                      'Evita que o celular pause seus avisos de mensagens com a tela desligada.',
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: _requestBatteryExemption,
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            child: Text(
-              'Aparência',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: secondaryText,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Tema do aplicativo',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<ThemeMode>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(
-                          value: ThemeMode.system,
-                          icon: Icon(Icons.brightness_auto_outlined, size: 18),
-                          label: Text('Sistema'),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.light,
-                          icon: Icon(Icons.light_mode_outlined, size: 18),
-                          label: Text('Claro'),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.dark,
-                          icon: Icon(Icons.dark_mode_outlined, size: 18),
-                          label: Text('Escuro'),
-                        ),
-                      ],
-                      selected: {themeMode},
-                      onSelectionChanged: (selection) {
-                        ref
-                            .read(themeModeProvider.notifier)
-                            .setThemeMode(selection.first);
-                      },
-                    ),
-                  ),
-                ],
               ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            child: Text(
-              'Conta e segurança',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: secondaryText,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  enabled: !isAuthBusy,
-                  leading: const Icon(Icons.password_rounded),
-                  title: const Text('Alterar senha'),
-                  subtitle: const Text('Defina uma nova senha informando a atual'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: _openChangePasswordDialog,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  enabled: !isAuthBusy && !_sendingReset,
-                  leading: const Icon(Icons.mark_email_read_rounded),
-                  title: const Text('Enviar e-mail de recuperação de senha'),
-                  subtitle: const Text('Receba um link para redefinir sua senha'),
-                  trailing: _sendingReset
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right_rounded),
-                  onTap: _sendResetLinkToMyEmail,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  enabled: !isAuthBusy,
-                  leading: const Icon(Icons.logout_rounded),
-                  title: const Text('Sair da conta'),
-                  onTap: _confirmSignOut,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  enabled: !isAuthBusy,
-                  leading: Icon(
-                    Icons.delete_forever_rounded,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  title: Text(
-                    'Excluir minha conta',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontWeight: FontWeight.w600,
+              const SizedBox(height: 20),
+              _SectionTitle(label: 'Conta', color: secondaryText),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      enabled: !isAuthBusy,
+                      leading: Icon(Icons.password_rounded, color: accent),
+                      title: const Text('Alterar senha'),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        color: secondaryText,
+                      ),
+                      onTap: _openChangePasswordDialog,
                     ),
-                  ),
-                  onTap: _confirmDeleteAccount,
+                    const Divider(height: 1),
+                    ListTile(
+                      enabled: !isAuthBusy,
+                      leading: const Icon(Icons.logout_rounded),
+                      title: const Text('Sair da conta'),
+                      onTap: _confirmSignOut,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      enabled: !isAuthBusy,
+                      leading: Icon(
+                        Icons.delete_forever_rounded,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      title: Text(
+                        'Excluir minha conta',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      onTap: _confirmDeleteAccount,
+                    ),
+                  ],
                 ),
+              ),
+              if (isAuthBusy) ...[
+                const SizedBox(height: 18),
+                const Center(child: CircularProgressIndicator()),
               ],
-            ),
+              const SizedBox(height: 22),
+              Text(
+                'Zapi $versionLabel',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: secondaryText,
+                ),
+              ),
+            ],
           ),
-          if (isAuthBusy) ...[
-            const SizedBox(height: 20),
-            const Center(child: CircularProgressIndicator()),
-          ],
-          const SizedBox(height: 20),
-          Text(
-            'Zapi — Versão $versionLabel',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12.5,
-              color: secondaryText,
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
       ),
     );
   }
 }
 
 class _ChangePasswordDialog extends StatefulWidget {
-  const _ChangePasswordDialog();
+  const _ChangePasswordDialog({required this.onForgotPassword});
+
+  final Future<void> Function() onForgotPassword;
 
   @override
   State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
@@ -667,12 +614,12 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                 textInputAction: TextInputAction.next,
                 decoration: InputDecoration(
                   labelText: 'Senha atual',
-                  prefixIcon: const Icon(Icons.lock_outline_rounded),
+                  prefixIcon: const Icon(Icons.lock_rounded),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscure
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
+                          ? Icons.visibility_rounded
+                          : Icons.visibility_off_rounded,
                     ),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
@@ -714,6 +661,16 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
                   }
                   return null;
                 },
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    widget.onForgotPassword();
+                  },
+                  child: const Text('Esqueci minha senha'),
+                ),
               ),
             ],
           ),
@@ -778,12 +735,12 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
               onFieldSubmitted: (_) => _submit(),
               decoration: InputDecoration(
                 labelText: 'Senha atual',
-                prefixIcon: const Icon(Icons.lock_outline_rounded),
+                prefixIcon: const Icon(Icons.lock_rounded),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscure
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined,
+                        ? Icons.visibility_rounded
+                        : Icons.visibility_off_rounded,
                   ),
                   onPressed: () => setState(() => _obscure = !_obscure),
                 ),

@@ -45,6 +45,40 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
     }
   }
 
+  IconData? _mediaPreviewIcon(ChatThread thread) {
+    switch (thread.lastMessageType) {
+      case MessageTypes.image:
+        return Icons.photo_camera_rounded;
+      case MessageTypes.audio:
+        return Icons.mic_rounded;
+      case MessageTypes.sticker:
+        return Icons.sticky_note_2_rounded;
+      case MessageTypes.text:
+        return null;
+      default:
+        final trimmed = thread.lastMessage.trim();
+        if (trimmed.startsWith('\u{1F4F7}') ||
+            trimmed == 'Foto' ||
+            trimmed.startsWith('Foto:')) {
+          return Icons.photo_camera_rounded;
+        }
+        if (trimmed.startsWith('\u{1F3A4}') || trimmed.startsWith('Áudio ')) {
+          return Icons.mic_rounded;
+        }
+        if (trimmed == 'Figurinha') {
+          return Icons.sticky_note_2_rounded;
+        }
+        return null;
+    }
+  }
+
+  String _cleanLastMessageLabel(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.startsWith('\u{1F4F7} ')) return trimmed.substring(2).trimLeft();
+    if (trimmed.startsWith('\u{1F3A4} ')) return trimmed.substring(2).trimLeft();
+    return raw;
+  }
+
   void _toggleSearch() {
     setState(() {
       _isSearching = !_isSearching;
@@ -87,7 +121,7 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
       builder: (sheetCtx) {
         return Consumer(
           builder: (context, ref, _) {
-            final contactsAsync = ref.watch(contactsListProvider);
+            final contactsAsync = ref.watch(contactsProvider);
             final isDark = Theme.of(context).brightness == Brightness.dark;
             final secondaryText = isDark
                 ? AppColors.darkTextSecondary
@@ -430,9 +464,27 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
                           ),
                           const SizedBox(width: 4),
                         ],
+                        if (!isTyping) ...[
+                          Builder(
+                            builder: (context) {
+                              final icon = _mediaPreviewIcon(chat);
+                              if (icon == null) return const SizedBox.shrink();
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Icon(
+                                  icon,
+                                  size: 15,
+                                  color: secondaryText,
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                         Expanded(
                           child: Text(
-                            isTyping ? 'digitando...' : chat.lastMessage,
+                            isTyping
+                                ? 'digitando...'
+                                : _cleanLastMessageLabel(chat.lastMessage),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(

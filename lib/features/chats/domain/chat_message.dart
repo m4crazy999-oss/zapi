@@ -28,14 +28,14 @@ class MessageTypes {
       case MessageTypes.image:
         if (clean.isNotEmpty) {
           final short = clean.length > 80 ? '${clean.substring(0, 77)}...' : clean;
-          return '📷 Foto: $short';
+          return 'Foto: $short';
         }
-        return '📷 Foto';
+        return 'Foto';
       case MessageTypes.audio:
         final dur = durationMs != null && durationMs > 0
             ? DateFormatter.formatDuration(Duration(milliseconds: durationMs))
             : '0:00';
-        return '🎤 Áudio $dur';
+        return 'Áudio $dur';
       case MessageTypes.sticker:
         return 'Figurinha';
       case MessageTypes.text:

@@ -31,6 +31,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   bool _initialized = false;
   bool _isUploadingPhoto = false;
+  bool _isUploadingBanner = false;
   bool _isSyncingId = false;
   String? _idSyncError;
   bool? _usernameAvailable;
@@ -142,7 +143,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return;
       }
 
-      await ref.read(profileControllerProvider.notifier).uploadPhoto(compressedBytes);
+      await ref
+          .read(profileControllerProvider.notifier)
+          .uploadPhoto(compressedBytes);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Foto de perfil atualizada!')),
@@ -193,6 +196,68 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _handlePickBanner() async {
+    try {
+      setState(() => _isUploadingBanner = true);
+      final compressedBytes = await ImageHelper.pickCropAndCompressBanner(context);
+      if (compressedBytes == null) {
+        if (mounted) setState(() => _isUploadingBanner = false);
+        return;
+      }
+
+      await ref
+          .read(profileControllerProvider.notifier)
+          .uploadBanner(compressedBytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Banner do perfil atualizado!')),
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Não foi possível atualizar o banner agora.'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingBanner = false);
+      }
+    }
+  }
+
+  Future<void> _handleRemoveBanner() async {
+    try {
+      setState(() => _isUploadingBanner = true);
+      await ref.read(profileControllerProvider.notifier).removeBanner();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Banner removido.')),
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingBanner = false);
+      }
+    }
+  }
+
   void _showPhotoOptions(AppUser user) {
     showModalBottomSheet<void>(
       context: context,
@@ -221,7 +286,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               if (user.hasPhoto)
                 ListTile(
                   leading: Icon(
-                    Icons.delete_outline_rounded,
+                    Icons.delete_rounded,
                     color: Theme.of(context).colorScheme.error,
                   ),
                   title: Text(
@@ -233,6 +298,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   onTap: () {
                     Navigator.pop(sheetContext);
                     _handleRemovePhoto();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showBannerOptions(AppUser user) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded),
+                title: const Text('Escolher imagem ou GIF da galeria'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _handlePickBanner();
+                },
+              ),
+              if (user.hasBanner)
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_rounded,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: Text(
+                    'Remover banner atual',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _handleRemoveBanner();
                   },
                 ),
               const SizedBox(height: 8),
@@ -304,14 +411,50 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ref.watch(firebaseAuthProvider).currentUser?.email ??
         '';
     final profileMutation = ref.watch(profileControllerProvider);
-    final isSaving =
-        profileMutation.isLoading && !_isUploadingPhoto && !_isSyncingId;
+    final isSaving = profileMutation.isLoading &&
+        !_isUploadingPhoto &&
+        !_isUploadingBanner &&
+        !_isSyncingId;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    final currentUser = profileAsync.value;
+    final hasCustomBanner = currentUser?.hasBanner ?? false;
+    final topPadding = MediaQuery.paddingOf(context).top;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Meu perfil')),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Center(
+            child: _HeaderIconPill(
+              icon: Icons.arrow_back_rounded,
+              onDarkBackdrop: hasCustomBanner || isDark,
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+        ),
+        actions: [
+          if (currentUser != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: _HeaderActionPill(
+                  icon: Icons.wallpaper_rounded,
+                  label: _isUploadingBanner ? 'Enviando...' : 'Alterar banner',
+                  onDarkBackdrop: hasCustomBanner || isDark,
+                  onPressed: _isUploadingBanner
+                      ? null
+                      : () => _showBannerOptions(currentUser),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: profileAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(
@@ -398,393 +541,419 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           _syncInitialValues(user);
           final hasPublicId = user.publicId.trim().isNotEmpty;
 
-          return SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Stack(
-                          clipBehavior: Clip.none,
-                          alignment: Alignment.bottomCenter,
+          return SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 36),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: ProfileBanner(
+                        bannerBase64: user.bannerBase64,
+                        height: 236 + topPadding,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: ZapiAvatar(
+                        displayName: user.displayName,
+                        photoBase64: user.photoBase64,
+                        photoUrl: user.photoUrl,
+                        radius: 52,
+                        showEditBadge: true,
+                        isLoading: _isUploadingPhoto,
+                        onTap: () => _showPhotoOptions(user),
+                      ),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 52),
-                              child: ProfileBanner(
-                                preset: user.bannerPreset,
-                                height: 150,
-                                borderRadius: BorderRadius.circular(22),
+                            Card(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.qr_code_2_rounded,
+                                          size: 20,
+                                          color: isDark
+                                              ? AppColors.emeraldBright
+                                              : AppColors.emeraldDark,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Seu ID exclusivo e @usuário',
+                                          style: TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: secondaryText,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (hasPublicId) ...[
+                                      SelectableText(
+                                        user.publicId,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: 1.1,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '@${user.username}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark
+                                              ? AppColors.emeraldBright
+                                              : AppColors.emeraldDark,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () => _copyIdentifier(
+                                                user.publicId,
+                                                'ID',
+                                              ),
+                                              icon: const Icon(
+                                                Icons.copy_rounded,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Copiar ID'),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: FilledButton.tonalIcon(
+                                              onPressed: () =>
+                                                  _shareIdentifiers(user),
+                                              icon: const Icon(
+                                                Icons.share_rounded,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Compartilhar'),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ] else ...[
+                                      SelectableText(
+                                        '@${user.username}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _idSyncError ??
+                                            'Seu código ZP-... ainda não foi gravado no servidor. Enquanto isso, outras pessoas podem adicionar você usando @${user.username}.',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          color: _idSyncError != null
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .error
+                                              : secondaryText,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: FilledButton.icon(
+                                              onPressed: _isSyncingId
+                                                  ? null
+                                                  : _syncOrGenerateId,
+                                              icon: _isSyncingId
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                    )
+                                                  : const Icon(
+                                                      Icons
+                                                          .auto_fix_high_rounded,
+                                                      size: 18,
+                                                    ),
+                                              label: Text(
+                                                _isSyncingId
+                                                    ? 'Gerando...'
+                                                    : 'Gerar meu ID',
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () => _copyIdentifier(
+                                                '@${user.username}',
+                                                '@usuário',
+                                              ),
+                                              icon: const Icon(
+                                                Icons.copy_rounded,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Copiar @'),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).scaffoldBackgroundColor,
-                                shape: BoxShape.circle,
+                            const SizedBox(height: 18),
+                            ZapiTextField(
+                              controller: _nameController,
+                              label: 'Nome de exibição',
+                              prefixIcon: Icons.person_rounded,
+                              enabled: !isSaving,
+                              maxLength: AppConstants.maxDisplayNameLength,
+                              validator: Validators.validateDisplayName,
+                            ),
+                            const SizedBox(height: 12),
+                            ZapiTextField(
+                              controller: _usernameController,
+                              label: 'Nome de usuário',
+                              prefixText: '@',
+                              prefixIcon: Icons.alternate_email_rounded,
+                              enabled: !isSaving,
+                              onChanged: (val) =>
+                                  _checkUsername(val, user.username),
+                              validator: Validators.validateUsername,
+                            ),
+                            if (_checkingUsername || _usernameAvailable != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6, left: 4),
+                                child: Row(
+                                  children: [
+                                    if (_checkingUsername) ...[
+                                      const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Verificando @usuário...',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(color: secondaryText),
+                                      ),
+                                    ] else if (_usernameAvailable == true) ...[
+                                      const Icon(
+                                        Icons.check_circle_rounded,
+                                        size: 16,
+                                        color: AppColors.success,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        '@usuário disponível!',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          color: AppColors.success,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ] else if (_usernameAvailable ==
+                                        false) ...[
+                                      Icon(
+                                        Icons.cancel_rounded,
+                                        size: 16,
+                                        color:
+                                            Theme.of(context).colorScheme.error,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Este @usuário já está em uso.',
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .error,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
-                              child: ZapiAvatar(
-                                displayName: user.displayName,
-                                photoBase64: user.photoBase64,
-                                photoUrl: user.photoUrl,
-                                radius: 52,
-                                showEditBadge: true,
-                                isLoading: _isUploadingPhoto,
-                                onTap: () => _showPhotoOptions(user),
+                            const SizedBox(height: 12),
+                            ZapiTextField(
+                              controller: _aboutController,
+                              label: 'Recado',
+                              hint: 'Escreva algo sobre você',
+                              prefixIcon: Icons.format_quote_rounded,
+                              enabled: !isSaving,
+                              maxLength: AppConstants.maxAboutLength,
+                              maxLines: 2,
+                              validator: Validators.validateAbout,
+                            ),
+                            const SizedBox(height: 12),
+                            Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.lock_rounded),
+                                title: const Text('E-mail privado da conta'),
+                                subtitle: Text(
+                                  privateEmail.isNotEmpty
+                                      ? '$privateEmail\nVisível apenas para você'
+                                      : 'Visível apenas para você',
+                                ),
+                                isThreeLine: privateEmail.isNotEmpty,
                               ),
+                            ),
+                            const SizedBox(height: 22),
+                            FilledButton(
+                              onPressed: (isSaving ||
+                                      _isUploadingPhoto ||
+                                      _isUploadingBanner)
+                                  ? null
+                                  : _saveProfile,
+                              child: isSaving
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Salvar alterações'),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Toque na foto para alterar (aceita foto animada GIF/WebP)',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: secondaryText),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Estilo do banner',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: secondaryText,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: 44,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: AppConstants.bannerPresets.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                              final preset = AppConstants.bannerPresets[index];
-                              final selected = user.bannerPreset == preset.id;
-                              final palette =
-                                  ProfileBanner.paletteFor(preset.id);
-                              return ChoiceChip(
-                                selected: selected,
-                                showCheckmark: false,
-                                avatar: Container(
-                                  width: 16,
-                                  height: 16,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        palette.colors.first,
-                                        palette.colors.last,
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                label: Text(preset.label),
-                                onSelected: (_) async {
-                                  try {
-                                    await ref
-                                        .read(
-                                            profileControllerProvider.notifier)
-                                        .updateBannerPreset(preset.id);
-                                  } on AppException catch (e) {
-                                    if (!context.mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(e.message)),
-                                    );
-                                  }
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.qr_code_2_rounded,
-                                      size: 20,
-                                      color: isDark
-                                          ? AppColors.emeraldBright
-                                          : AppColors.emeraldDark,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Seu ID exclusivo e @usuário',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: secondaryText,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                if (hasPublicId) ...[
-                                  SelectableText(
-                                    user.publicId,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 1.1,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '@${user.username}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark
-                                          ? AppColors.emeraldBright
-                                          : AppColors.emeraldDark,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Compartilhe este ID ou seu @usuário para que outras pessoas adicionem você sem precisar do seu e-mail.',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: secondaryText,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          onPressed: () => _copyIdentifier(
-                                            user.publicId,
-                                            'ID',
-                                          ),
-                                          icon: const Icon(
-                                            Icons.copy_rounded,
-                                            size: 18,
-                                          ),
-                                          label: const Text('Copiar ID'),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: FilledButton.tonalIcon(
-                                          onPressed: () =>
-                                              _shareIdentifiers(user),
-                                          icon: const Icon(
-                                            Icons.share_rounded,
-                                            size: 18,
-                                          ),
-                                          label: const Text('Compartilhar'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ] else ...[
-                                  SelectableText(
-                                    '@${user.username}',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    _idSyncError ??
-                                        'Seu código ZP-... ainda não foi gravado no servidor. Enquanto isso, outras pessoas podem adicionar você usando @${user.username}.',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: _idSyncError != null
-                                          ? Theme.of(context).colorScheme.error
-                                          : secondaryText,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: FilledButton.icon(
-                                          onPressed: _isSyncingId
-                                              ? null
-                                              : _syncOrGenerateId,
-                                          icon: _isSyncingId
-                                              ? const SizedBox(
-                                                  width: 16,
-                                                  height: 16,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: Colors.white,
-                                                  ),
-                                                )
-                                              : const Icon(
-                                                  Icons.auto_fix_high_rounded,
-                                                  size: 18,
-                                                ),
-                                          label: Text(
-                                            _isSyncingId
-                                                ? 'Gerando...'
-                                                : 'Gerar meu ID',
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          onPressed: () => _copyIdentifier(
-                                            '@${user.username}',
-                                            '@usuário',
-                                          ),
-                                          icon: const Icon(
-                                            Icons.copy_rounded,
-                                            size: 18,
-                                          ),
-                                          label: const Text('Copiar @'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        ZapiTextField(
-                          controller: _nameController,
-                          label: 'Nome de exibição',
-                          prefixIcon: Icons.person_outline_rounded,
-                          enabled: !isSaving,
-                          maxLength: AppConstants.maxDisplayNameLength,
-                          validator: Validators.validateDisplayName,
-                        ),
-                        const SizedBox(height: 12),
-                        ZapiTextField(
-                          controller: _usernameController,
-                          label: 'Nome de usuário',
-                          prefixText: '@',
-                          prefixIcon: Icons.alternate_email_rounded,
-                          enabled: !isSaving,
-                          onChanged: (val) => _checkUsername(val, user.username),
-                          validator: Validators.validateUsername,
-                        ),
-                        if (_checkingUsername || _usernameAvailable != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6, left: 4),
-                            child: Row(
-                              children: [
-                                if (_checkingUsername) ...[
-                                  const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Verificando @usuário...',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(color: secondaryText),
-                                  ),
-                                ] else if (_usernameAvailable == true) ...[
-                                  const Icon(
-                                    Icons.check_circle_rounded,
-                                    size: 16,
-                                    color: AppColors.success,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Text(
-                                    '@usuário disponível!',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: AppColors.success,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ] else if (_usernameAvailable == false) ...[
-                                  Icon(
-                                    Icons.cancel_rounded,
-                                    size: 16,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Este @usuário já está em uso.',
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      color: Theme.of(context).colorScheme.error,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        const SizedBox(height: 12),
-                        ZapiTextField(
-                          controller: _aboutController,
-                          label: 'Recado',
-                          hint: 'Escreva algo sobre você',
-                          prefixIcon: Icons.info_outline_rounded,
-                          enabled: !isSaving,
-                          maxLength: AppConstants.maxAboutLength,
-                          maxLines: 2,
-                          validator: Validators.validateAbout,
-                        ),
-                        const SizedBox(height: 12),
-                        Card(
-                          child: ListTile(
-                            leading: const Icon(Icons.lock_outline_rounded),
-                            title: const Text('E-mail privado da conta'),
-                            subtitle: Text(
-                              privateEmail.isNotEmpty
-                                  ? '$privateEmail\nVisível apenas para você'
-                                  : 'Visível apenas para você',
-                            ),
-                            isThreeLine: privateEmail.isNotEmpty,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        FilledButton(
-                          onPressed:
-                              (isSaving || _isUploadingPhoto) ? null : _saveProfile,
-                          child: isSaving
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Salvar alterações'),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _HeaderIconPill extends StatelessWidget {
+  const _HeaderIconPill({
+    required this.icon,
+    required this.onDarkBackdrop,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final bool onDarkBackdrop;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = onDarkBackdrop
+        ? Colors.black.withValues(alpha: 0.34)
+        : Colors.white.withValues(alpha: 0.78);
+    final fg = onDarkBackdrop ? Colors.white : AppColors.lightTextPrimary;
+
+    return Material(
+      color: bg,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Icon(icon, color: fg, size: 21),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderActionPill extends StatelessWidget {
+  const _HeaderActionPill({
+    required this.icon,
+    required this.label,
+    required this.onDarkBackdrop,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool onDarkBackdrop;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = onDarkBackdrop
+        ? Colors.black.withValues(alpha: 0.38)
+        : Colors.white.withValues(alpha: 0.84);
+    final fg = onDarkBackdrop ? Colors.white : AppColors.lightTextPrimary;
+
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: fg),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

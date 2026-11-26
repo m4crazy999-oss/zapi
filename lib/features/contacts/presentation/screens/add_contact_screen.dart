@@ -264,7 +264,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                                 controller: _nicknameController,
                                 label: 'Apelido local (opcional)',
                                 hint: 'Como você deseja ver esse contato',
-                                prefixIcon: Icons.badge_outlined,
+                                prefixIcon: Icons.badge_rounded,
                                 enabled: !_saving,
                                 maxLength: 50,
                               ),

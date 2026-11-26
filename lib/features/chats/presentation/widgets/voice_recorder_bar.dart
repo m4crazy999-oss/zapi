@@ -72,6 +72,9 @@ class VoiceRecorderController {
           bitRate: AppConstants.audioBitRate,
           sampleRate: AppConstants.audioSampleRate,
           numChannels: 1,
+          noiseSuppress: true,
+          echoCancel: true,
+          autoGain: true,
         ),
         path: filePath,
       );
@@ -264,7 +267,7 @@ class VoiceRecordingBar extends StatelessWidget {
               onPressed: controller.cancelRecording,
               tooltip: 'Cancelar áudio',
               icon: Icon(
-                Icons.delete_outline_rounded,
+                Icons.delete_rounded,
                 color: Theme.of(context).colorScheme.error,
               ),
             ),

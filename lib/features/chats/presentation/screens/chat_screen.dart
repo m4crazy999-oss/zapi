@@ -612,7 +612,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   ),
               ],
               ListTile(
-                leading: const Icon(Icons.delete_outline_rounded),
+                leading: const Icon(Icons.delete_rounded),
                 title: const Text('Apagar para mim'),
                 onTap: () async {
                   Navigator.pop(sheetContext);
@@ -636,7 +636,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               if (isMine && !message.deletedForEveryone)
                 ListTile(
                   leading: Icon(
-                    Icons.delete_forever_outlined,
+                    Icons.delete_forever_rounded,
                     color: Theme.of(context).colorScheme.error,
                   ),
                   title: Text(

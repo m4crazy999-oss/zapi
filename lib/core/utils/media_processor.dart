@@ -207,6 +207,25 @@ class MediaProcessor {
     return compressed;
   }
 
+  /// Redimensiona banner animado (GIF/WebP) para caber no limite de 320 KB.
+  static Future<Uint8List> compressAnimatedBannerIfNeeded(
+    Uint8List rawBytes,
+  ) async {
+    if (rawBytes.length <= AppConstants.maxProfileBannerBytes) {
+      return rawBytes;
+    }
+    final compressed = await Isolate.run(
+      () => _compressAnimatedBannerInIsolate(rawBytes),
+    );
+    if (compressed == null ||
+        compressed.length > AppConstants.maxProfileBannerBytes) {
+      throw const AppException(
+        'Esse GIF é grande demais para o banner. Escolha um GIF mais curto ou leve.',
+      );
+    }
+    return compressed;
+  }
+
   static bool _detectAnimatedInIsolate(Uint8List rawBytes) {
     final gif = img.decodeGif(rawBytes);
     if (gif != null && gif.numFrames > 1) return true;
@@ -245,6 +264,42 @@ class MediaProcessor {
       if (out == null) continue;
       final candidate = Uint8List.fromList(img.encodeGif(out));
       if (candidate.length <= AppConstants.maxProfilePhotoBytes) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  static Uint8List? _compressAnimatedBannerInIsolate(Uint8List rawBytes) {
+    final decoded = img.decodeGif(rawBytes) ?? img.decodeWebP(rawBytes);
+    if (decoded == null || decoded.numFrames <= 1) return null;
+
+    const targetWidths = [420, 340, 260, 210];
+    const frameSteps = [1, 2, 2, 3];
+
+    for (var attempt = 0; attempt < targetWidths.length; attempt++) {
+      final targetW = targetWidths[attempt];
+      final step = frameSteps[attempt];
+      img.Image? out;
+
+      for (var i = 0; i < decoded.frames.length; i += step) {
+        final frame = decoded.frames[i];
+        final resized = img.copyResize(
+          frame,
+          width: math.min(targetW, frame.width),
+          interpolation: img.Interpolation.linear,
+        );
+        resized.frameDuration = frame.frameDuration * step;
+        if (out == null) {
+          out = resized;
+        } else {
+          out.addFrame(resized);
+        }
+      }
+
+      if (out == null) continue;
+      final candidate = Uint8List.fromList(img.encodeGif(out));
+      if (candidate.length <= AppConstants.maxProfileBannerBytes) {
         return candidate;
       }
     }

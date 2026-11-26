@@ -15,6 +15,7 @@ class AvatarCropScreen extends StatefulWidget {
     this.confirmLabel = 'Confirmar foto',
     this.circularOverlay = true,
     this.isAnimated = false,
+    this.aspectRatio = 1.0,
   });
 
   final Uint8List imageBytes;
@@ -22,6 +23,7 @@ class AvatarCropScreen extends StatefulWidget {
   final String confirmLabel;
   final bool circularOverlay;
   final bool isAnimated;
+  final double aspectRatio;
 
   static Future<Uint8List?> open(
     BuildContext context, {
@@ -30,6 +32,7 @@ class AvatarCropScreen extends StatefulWidget {
     String confirmLabel = 'Confirmar foto',
     bool circularOverlay = true,
     bool isAnimated = false,
+    double aspectRatio = 1.0,
   }) {
     return Navigator.of(context, rootNavigator: true).push<Uint8List?>(
       MaterialPageRoute(
@@ -40,6 +43,7 @@ class AvatarCropScreen extends StatefulWidget {
           confirmLabel: confirmLabel,
           circularOverlay: circularOverlay,
           isAnimated: isAnimated,
+          aspectRatio: aspectRatio,
         ),
       ),
     );
@@ -55,7 +59,7 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
       TransformationController();
 
   ui.Image? _decodedImage;
-  double? _configuredCropSize;
+  Size? _configuredViewport;
   bool _isConfirming = false;
 
   @override
@@ -81,28 +85,44 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
     super.dispose();
   }
 
+  Size _computeViewportSize(BoxConstraints constraints) {
+    final maxW = (constraints.maxWidth - 32).clamp(200.0, 420.0);
+    final maxH = (constraints.maxHeight - 56).clamp(150.0, 380.0);
+    final ratio = widget.aspectRatio <= 0 ? 1.0 : widget.aspectRatio;
+
+    var w = maxW;
+    var h = w / ratio;
+    if (h > maxH) {
+      h = maxH;
+      w = h * ratio;
+    }
+    return Size(w, h);
+  }
+
   void _ensureInitialTransform(
-    double cropSize,
+    Size viewport,
     double displayW,
     double displayH,
   ) {
-    if (_configuredCropSize == cropSize) return;
-    _configuredCropSize = cropSize;
-    final dx = -(displayW - cropSize) / 2;
-    final dy = -(displayH - cropSize) / 2;
+    if (_configuredViewport == viewport) return;
+    _configuredViewport = viewport;
+    final dx = -(displayW - viewport.width) / 2;
+    final dy = -(displayH - viewport.height) / 2;
     _transformController.value = Matrix4.translationValues(dx, dy, 0);
   }
 
   void _resetZoom() {
     final decoded = _decodedImage;
-    final cropSize = _configuredCropSize;
-    if (decoded == null || cropSize == null) return;
-    final shortSide = math.min(decoded.width, decoded.height).toDouble();
-    final scale = shortSide > 0 ? cropSize / shortSide : 1.0;
+    final viewport = _configuredViewport;
+    if (decoded == null || viewport == null) return;
+    final scale = math.max(
+      viewport.width / math.max(1, decoded.width),
+      viewport.height / math.max(1, decoded.height),
+    );
     final displayW = decoded.width * scale;
     final displayH = decoded.height * scale;
-    final dx = -(displayW - cropSize) / 2;
-    final dy = -(displayH - cropSize) / 2;
+    final dx = -(displayW - viewport.width) / 2;
+    final dy = -(displayH - viewport.height) / 2;
     _transformController.value = Matrix4.translationValues(dx, dy, 0);
   }
 
@@ -169,12 +189,7 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final cropSize = math
-                    .min(
-                      constraints.maxWidth - 32,
-                      constraints.maxHeight - 56,
-                    )
-                    .clamp(200.0, 380.0);
+                final viewport = _computeViewportSize(constraints);
 
                 return Center(
                   child: Column(
@@ -182,8 +197,8 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
                     children: [
                       if (widget.isAnimated)
                         Container(
-                          width: cropSize,
-                          height: cropSize,
+                          width: viewport.width,
+                          height: viewport.height,
                           decoration: BoxDecoration(
                             shape: widget.circularOverlay
                                 ? BoxShape.circle
@@ -204,11 +219,11 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
                           ),
                         )
                       else
-                        _buildStaticCropArea(cropSize),
+                        _buildStaticCropArea(viewport),
                       const SizedBox(height: 16),
                       Text(
                         widget.isAnimated
-                            ? 'Foto animada pronta para aplicar no perfil'
+                            ? 'Animação pronta para aplicar no perfil'
                             : 'Arraste e use os dedos para ajustar o enquadramento',
                         style: const TextStyle(
                           color: Colors.white70,
@@ -277,46 +292,48 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
     );
   }
 
-  Widget _buildStaticCropArea(double cropSize) {
+  Widget _buildStaticCropArea(Size viewport) {
     final decoded = _decodedImage;
     if (decoded == null) {
       return SizedBox(
-        width: cropSize,
-        height: cropSize,
+        width: viewport.width,
+        height: viewport.height,
         child: const Center(
           child: CircularProgressIndicator(color: AppColors.emeraldBright),
         ),
       );
     }
 
-    final shortSide = math.min(decoded.width, decoded.height).toDouble();
-    final baseScale = shortSide > 0 ? cropSize / shortSide : 1.0;
+    final baseScale = math.max(
+      viewport.width / math.max(1, decoded.width),
+      viewport.height / math.max(1, decoded.height),
+    );
     final displayW = decoded.width * baseScale;
     final displayH = decoded.height * baseScale;
-    _ensureInitialTransform(cropSize, displayW, displayH);
+    _ensureInitialTransform(viewport, displayW, displayH);
 
     return SizedBox(
-      width: cropSize,
-      height: cropSize,
+      width: viewport.width,
+      height: viewport.height,
       child: Stack(
         fit: StackFit.expand,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(
-              widget.circularOverlay ? cropSize / 2 : 20,
+              widget.circularOverlay ? viewport.shortestSide / 2 : 20,
             ),
             child: RepaintBoundary(
               key: _boundaryKey,
               child: Container(
-                width: cropSize,
-                height: cropSize,
+                width: viewport.width,
+                height: viewport.height,
                 color: Colors.black,
                 child: InteractiveViewer(
                   transformationController: _transformController,
                   constrained: false,
                   minScale: 1.0,
                   maxScale: 4.5,
-                  boundaryMargin: EdgeInsets.all(cropSize * 0.25),
+                  boundaryMargin: EdgeInsets.all(viewport.shortestSide * 0.25),
                   child: SizedBox(
                     width: displayW,
                     height: displayH,

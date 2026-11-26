@@ -45,6 +45,35 @@ class _RouterRefreshNotifier extends ChangeNotifier {
   }
 }
 
+CustomTransitionPage<void> _buildSmoothPage(
+  GoRouterState state,
+  Widget child,
+) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    transitionDuration: const Duration(milliseconds: 220),
+    reverseTransitionDuration: const Duration(milliseconds: 190),
+    child: child,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.04, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _RouterRefreshNotifier(ref);
   ref.onDispose(refreshNotifier.dispose);
@@ -88,15 +117,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/login',
-        builder: (context, state) => const LoginScreen(),
+        pageBuilder: (context, state) => _buildSmoothPage(
+          state,
+          const LoginScreen(),
+        ),
       ),
       GoRoute(
         path: '/register',
-        builder: (context, state) => const RegisterScreen(),
+        pageBuilder: (context, state) => _buildSmoothPage(
+          state,
+          const RegisterScreen(),
+        ),
       ),
       GoRoute(
         path: '/forgot-password',
-        builder: (context, state) => const ForgotPasswordScreen(),
+        pageBuilder: (context, state) => _buildSmoothPage(
+          state,
+          const ForgotPasswordScreen(),
+        ),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
@@ -140,33 +178,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/chats/:chatId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final chatId = state.pathParameters['chatId'] ?? '';
-          return ChatScreen(chatId: chatId);
+          return _buildSmoothPage(state, ChatScreen(chatId: chatId));
         },
       ),
       GoRoute(
         path: '/chats/:chatId/profile',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final chatId = state.pathParameters['chatId'] ?? '';
-          return PeerProfileScreen(chatId: chatId);
+          return _buildSmoothPage(state, PeerProfileScreen(chatId: chatId));
         },
       ),
       GoRoute(
         path: '/contacts/add',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const AddContactScreen(),
+        pageBuilder: (context, state) =>
+            _buildSmoothPage(state, const AddContactScreen()),
       ),
       GoRoute(
         path: '/profile',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const ProfileScreen(),
+        pageBuilder: (context, state) =>
+            _buildSmoothPage(state, const ProfileScreen()),
       ),
       GoRoute(
         path: '/stickers/create',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const CreateStickerScreen(),
+        pageBuilder: (context, state) =>
+            _buildSmoothPage(state, const CreateStickerScreen()),
       ),
     ],
   );

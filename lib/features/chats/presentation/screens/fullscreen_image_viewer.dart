@@ -185,20 +185,20 @@ class _FullscreenImageViewerState
         widget.imageUrl!,
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => const Icon(
-          Icons.broken_image_outlined,
+          Icons.broken_image_rounded,
           color: Colors.white54,
           size: 64,
         ),
       );
     } else if (_loadFailed) {
       content = const Icon(
-        Icons.broken_image_outlined,
+        Icons.broken_image_rounded,
         color: Colors.white54,
         size: 64,
       );
     } else {
       content = const Icon(
-        Icons.broken_image_outlined,
+        Icons.broken_image_rounded,
         color: Colors.white54,
         size: 64,
       );

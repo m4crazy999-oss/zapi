@@ -11,6 +11,7 @@ class AppUser {
     this.publicId = '',
     this.photoBase64,
     this.photoUrl,
+    this.bannerBase64,
     this.bannerPreset = AppConstants.defaultBannerPreset,
     this.createdAt,
     this.lastSeen,
@@ -24,6 +25,7 @@ class AppUser {
   final String publicId;
   final String? photoBase64;
   final String? photoUrl;
+  final String? bannerBase64;
   final String bannerPreset;
   final String about;
   final DateTime? createdAt;
@@ -34,6 +36,9 @@ class AppUser {
   bool get hasPhoto =>
       (photoBase64 != null && photoBase64!.trim().isNotEmpty) ||
       (photoUrl != null && photoUrl!.trim().isNotEmpty);
+
+  bool get hasBanner =>
+      bannerBase64 != null && bannerBase64!.trim().isNotEmpty;
 
   factory AppUser.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? <String, dynamic>{};
@@ -46,6 +51,7 @@ class AppUser {
       publicId: (data['publicId'] as String?) ?? '',
       photoBase64: data['photoBase64'] as String?,
       photoUrl: data['photoUrl'] as String?,
+      bannerBase64: data['bannerBase64'] as String?,
       bannerPreset: (rawBanner != null && rawBanner.isNotEmpty)
           ? rawBanner
           : AppConstants.defaultBannerPreset,
@@ -66,6 +72,8 @@ class AppUser {
     String? publicId,
     String? photoBase64,
     String? photoUrl,
+    String? bannerBase64,
+    bool clearBannerBase64 = false,
     String? bannerPreset,
     String? about,
     DateTime? createdAt,
@@ -80,6 +88,8 @@ class AppUser {
       publicId: publicId ?? this.publicId,
       photoBase64: photoBase64 ?? this.photoBase64,
       photoUrl: photoUrl ?? this.photoUrl,
+      bannerBase64:
+          clearBannerBase64 ? null : (bannerBase64 ?? this.bannerBase64),
       bannerPreset: bannerPreset ?? this.bannerPreset,
       about: about ?? this.about,
       createdAt: createdAt ?? this.createdAt,

@@ -56,7 +56,22 @@ class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
         : chats.fold<int>(0, (sum, c) => sum + c.unreadFor(myUid));
 
     return Scaffold(
-      body: widget.navigationShell,
+      body: TweenAnimationBuilder<double>(
+        key: ValueKey(widget.navigationShell.currentIndex),
+        tween: Tween<double>(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 165),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, child) {
+          return Opacity(
+            opacity: t,
+            child: Transform.translate(
+              offset: Offset(0, (1 - t) * 6),
+              child: child,
+            ),
+          );
+        },
+        child: widget.navigationShell,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: widget.navigationShell.currentIndex,
         onDestinationSelected: _onDestinationSelected,
@@ -85,7 +100,7 @@ class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
             label: 'Contatos',
           ),
           const NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
+            icon: Icon(Icons.settings_rounded),
             selectedIcon: Icon(Icons.settings_rounded),
             label: 'Configurações',
           ),

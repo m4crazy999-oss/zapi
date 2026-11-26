@@ -73,8 +73,8 @@ class _ZapiTextFieldState extends State<ZapiTextField> {
                 onPressed: () => setState(() => _obscured = !_obscured),
                 icon: Icon(
                   _obscured
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
                 ),
                 tooltip: _obscured ? 'Mostrar senha' : 'Ocultar senha',
               )

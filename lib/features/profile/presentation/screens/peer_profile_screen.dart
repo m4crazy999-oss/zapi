@@ -339,9 +339,7 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
             ? savedContact!.about.trim()
             : (threadProfile?.about?.trim() ?? ''));
     final publicId = peerUser?.publicId ?? '';
-    final bannerPreset = peerUser?.bannerPreset ??
-        threadProfile?.bannerPreset ??
-        AppConstants.defaultBannerPreset;
+    final bannerBase64 = peerUser?.bannerBase64;
     final photoBase64 = peerUser?.photoBase64 ??
         savedContact?.photoBase64 ??
         threadProfile?.photoBase64;
@@ -363,13 +361,48 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
           displayName: displayName,
           username: username,
           about: about,
-          bannerPreset: bannerPreset,
           photoBase64: photoBase64,
           photoUrl: photoUrl,
         );
 
+    final hasCustomBanner =
+        bannerBase64 != null && bannerBase64.trim().isNotEmpty;
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final onDarkBackdrop = hasCustomBanner || isDark;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Perfil')),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Center(
+            child: Material(
+              color: onDarkBackdrop
+                  ? Colors.black.withValues(alpha: 0.34)
+                  : Colors.white.withValues(alpha: 0.78),
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => Navigator.of(context).maybePop(),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(
+                    Icons.arrow_back_rounded,
+                    color: onDarkBackdrop
+                        ? Colors.white
+                        : AppColors.lightTextPrimary,
+                    size: 21,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
@@ -378,14 +411,14 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
             alignment: Alignment.bottomCenter,
             children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 50),
+                padding: const EdgeInsets.only(bottom: 24),
                 child: ProfileBanner(
-                  preset: bannerPreset,
-                  height: 164,
+                  bannerBase64: bannerBase64,
+                  height: 236 + topPadding,
                 ),
               ),
               Container(
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   color: Theme.of(context).scaffoldBackgroundColor,
                   shape: BoxShape.circle,
