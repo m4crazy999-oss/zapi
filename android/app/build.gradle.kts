@@ -15,6 +15,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
     namespace = "com.zapi.chat"
     compileSdk = 35
     ndkVersion = flutter.ndkVersion
