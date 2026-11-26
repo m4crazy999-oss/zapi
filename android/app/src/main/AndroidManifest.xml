@@ -5,6 +5,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission
@@ -37,6 +42,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Serviço leve em segundo plano para receber mensagens com o app minimizado ou fechado -->
+        <service
+            android:name=".ZapiMessageService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging"
+            android:stopWithTask="false" />
+
+        <!-- Verificação periódica persistente após reinicialização do aparelho -->
+        <service
+            android:name=".ZapiSyncJobService"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Activity nativa necessária para o recorte de foto de perfil e figurinhas (uCrop) -->
         <activity

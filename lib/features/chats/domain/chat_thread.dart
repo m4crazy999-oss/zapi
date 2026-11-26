@@ -141,6 +141,11 @@ class ChatThread {
       });
     }
 
+    final rawClientAt = data['lastMessageClientAt'];
+    final clientDate = rawClientAt is int
+        ? DateTime.fromMillisecondsSinceEpoch(rawClientAt)
+        : null;
+
     return ChatThread(
       chatId: doc.id,
       participants: participants,
@@ -150,7 +155,8 @@ class ChatThread {
       lastMessageSenderId: data['lastMessageSenderId'] as String?,
       lastMessageStatus: (data['lastMessageStatus'] as String?) ?? 'sent',
       lastMessageAt: (data['lastMessageAt'] as Timestamp?)?.toDate() ??
-          (data['updatedAt'] as Timestamp?)?.toDate(),
+          (data['updatedAt'] as Timestamp?)?.toDate() ??
+          clientDate,
       unreadCount: unreadMap,
       typingAt: typingMap,
       blockedBy: blockedMap,

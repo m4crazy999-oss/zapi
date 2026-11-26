@@ -27,15 +27,23 @@ class ChatsRepository {
   Stream<List<ChatThread>> watchUserChats(String uid) {
     return _chatsRef
         .where('participants', arrayContains: uid)
-        .orderBy('lastMessageAt', descending: true)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-      return snapshot.docs.map(ChatThread.fromFirestore).toList();
+      final threads = snapshot.docs.map(ChatThread.fromFirestore).toList();
+      threads.sort((a, b) {
+        final aTime = a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime);
+      });
+      return threads;
     });
   }
 
   Stream<ChatThread?> watchChat(String chatId) {
-    return _chatsRef.doc(chatId).snapshots().map((doc) {
+    return _chatsRef
+        .doc(chatId)
+        .snapshots(includeMetadataChanges: true)
+        .map((doc) {
       if (!doc.exists) return null;
       return ChatThread.fromFirestore(doc);
     });
@@ -93,6 +101,7 @@ class ChatsRepository {
       sender: sender,
       recipient: recipient,
       chatExists: chatExists,
+      clientCreatedAt: clientNow,
       messagePayload: {
         'id': messageRef.id,
         'chatId': chatId,
@@ -141,14 +150,6 @@ class ChatsRepository {
       );
     }
 
-    var chatExists = knownChatExists ?? false;
-    if (!chatExists) {
-      try {
-        final chatSnap = await _chatsRef.doc(chatId).get();
-        chatExists = chatSnap.exists;
-      } catch (_) {}
-    }
-
     Map<String, dynamic>? mediaPayload;
     if (mediaId != null &&
         mediaId.isNotEmpty &&
@@ -175,7 +176,8 @@ class ChatsRepository {
       messageId: messageId,
       sender: sender,
       recipient: recipient,
-      chatExists: chatExists,
+      chatExists: knownChatExists ?? false,
+      clientCreatedAt: clientCreatedAt,
       mediaId: mediaId,
       mediaPayload: mediaPayload,
       messagePayload: {
@@ -208,12 +210,49 @@ class ChatsRepository {
     );
   }
 
+  Future<bool> _resolveChatExists(
+    DocumentReference<Map<String, dynamic>> chatRef,
+    bool hintExists,
+  ) async {
+    if (hintExists) return true;
+    try {
+      final cacheSnap =
+          await chatRef.get(const GetOptions(source: Source.cache));
+      if (cacheSnap.exists) return true;
+    } catch (_) {}
+
+    try {
+      final snap = await chatRef
+          .get(const GetOptions(source: Source.serverAndCache))
+          .timeout(const Duration(milliseconds: 1200));
+      return snap.exists;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<AppUser> _resolveRecipientForProfile(AppUser recipient) async {
+    if (recipient.username.isNotEmpty) return recipient;
+    try {
+      final snap = await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(recipient.uid)
+          .get()
+          .timeout(const Duration(milliseconds: 1000));
+      if (snap.exists) {
+        return AppUser.fromFirestore(snap);
+      }
+    } catch (_) {}
+    return recipient;
+  }
+
   Future<void> _commitMessage({
     required String chatId,
     required String messageId,
     required AppUser sender,
     required AppUser recipient,
     required bool chatExists,
+    required int clientCreatedAt,
     required Map<String, dynamic> messagePayload,
     required String preview,
     String? mediaId,
@@ -222,6 +261,11 @@ class ChatsRepository {
     final chatRef = _chatsRef.doc(chatId);
     final messageRef =
         chatRef.collection(AppConstants.messagesSubcollection).doc(messageId);
+
+    final actualChatExists = await _resolveChatExists(chatRef, chatExists);
+    final resolvedRecipient = actualChatExists
+        ? recipient
+        : await _resolveRecipientForProfile(recipient);
 
     final senderProfile = ChatParticipantProfile(
       uid: sender.uid,
@@ -232,11 +276,11 @@ class ChatsRepository {
     ).toMap();
 
     final recipientProfile = ChatParticipantProfile(
-      uid: recipient.uid,
-      displayName: recipient.displayName,
-      username: recipient.username,
-      photoBase64: recipient.photoBase64,
-      photoUrl: recipient.photoUrl,
+      uid: resolvedRecipient.uid,
+      displayName: resolvedRecipient.displayName,
+      username: resolvedRecipient.username,
+      photoBase64: resolvedRecipient.photoBase64,
+      photoUrl: resolvedRecipient.photoUrl,
     ).toMap();
 
     final batch = _firestore.batch();
@@ -249,55 +293,64 @@ class ChatsRepository {
 
     batch.set(messageRef, messagePayload);
 
-    if (!chatExists) {
+    if (!actualChatExists) {
       final participants =
-          ChatIdHelper.sortedParticipants(sender.uid, recipient.uid);
+          ChatIdHelper.sortedParticipants(sender.uid, resolvedRecipient.uid);
       batch.set(chatRef, {
         'participants': participants,
         'participantProfiles': {
           sender.uid: senderProfile,
-          recipient.uid: recipientProfile,
+          resolvedRecipient.uid: recipientProfile,
         },
         'blockedBy': {
           sender.uid: false,
-          recipient.uid: false,
+          resolvedRecipient.uid: false,
         },
         'lastMessage': preview,
         'lastMessageId': messageId,
         'lastMessageSenderId': sender.uid,
         'lastMessageStatus': 'sent',
+        'lastMessageClientAt': clientCreatedAt,
         'lastMessageAt': FieldValue.serverTimestamp(),
         'unreadCount': {
           sender.uid: 0,
-          recipient.uid: 1,
+          resolvedRecipient.uid: 1,
         },
         'typing': {
           sender.uid: null,
-          recipient.uid: null,
+          resolvedRecipient.uid: null,
         },
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } else {
-      batch.update(chatRef, {
+      final updates = <String, dynamic>{
         'participantProfiles.${sender.uid}': senderProfile,
-        'participantProfiles.${recipient.uid}': recipientProfile,
         'lastMessage': preview,
         'lastMessageId': messageId,
         'lastMessageSenderId': sender.uid,
         'lastMessageStatus': 'sent',
+        'lastMessageClientAt': clientCreatedAt,
         'lastMessageAt': FieldValue.serverTimestamp(),
-        'unreadCount.${recipient.uid}': FieldValue.increment(1),
+        'unreadCount.${resolvedRecipient.uid}': FieldValue.increment(1),
         'typing.${sender.uid}': null,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      if (resolvedRecipient.username.isNotEmpty) {
+        updates['participantProfiles.${resolvedRecipient.uid}'] =
+            recipientProfile;
+      }
+      batch.update(chatRef, updates);
     }
 
     try {
-      await Future.any<void>([
-        batch.commit(),
-        Future<void>.delayed(const Duration(milliseconds: 450)),
-      ]);
+      final commitFuture = batch.commit();
+      try {
+        await commitFuture.timeout(const Duration(milliseconds: 1500));
+      } on TimeoutException {
+        // Rede lenta ou offline: gravação já está na fila local para sincronizar.
+        unawaited(commitFuture.catchError((_) {}));
+      }
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
     }

@@ -178,20 +178,6 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Contatos'),
-        actions: [
-          IconButton(
-            tooltip: 'Adicionar contato',
-            icon: const Icon(Icons.person_add_alt_1_rounded),
-            onPressed: () => context.push('/contacts/add'),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/contacts/add'),
-        backgroundColor: AppColors.emerald,
-        foregroundColor: Colors.white,
-        tooltip: 'Adicionar contato',
-        child: const Icon(Icons.person_add_alt_1_rounded),
       ),
       body: Column(
         children: [
@@ -330,18 +316,10 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                           Text(
                             query.isNotEmpty
                                 ? 'Tente buscar por outro nome ou @usuário.'
-                                : 'Adicione amigos usando o @usuário ou o ID exclusivo para começar a conversar.',
+                                : 'Para adicionar alguém, toque no botão de adicionar na aba Conversas e informe o ID exclusivo ou @usuário da pessoa.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: secondaryText),
                           ),
-                          if (query.isEmpty) ...[
-                            const SizedBox(height: 20),
-                            FilledButton.icon(
-                              onPressed: () => context.push('/contacts/add'),
-                              icon: const Icon(Icons.person_add_alt_1_rounded),
-                              label: const Text('Adicionar contato'),
-                            ),
-                          ],
                         ],
                       ),
                     ),

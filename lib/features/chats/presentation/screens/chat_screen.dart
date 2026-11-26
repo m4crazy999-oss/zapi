@@ -60,6 +60,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _isCurrentlyTyping = false;
   bool _hasTextInput = false;
   bool _showStickerTray = false;
+  bool _isAddingContact = false;
   int _lastVisibleCount = 0;
 
   Timer? _typingTimer;
@@ -427,6 +428,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
+  Future<void> _addPeerToContacts({
+    required AppUser? peerUser,
+    required ChatThread? thread,
+  }) async {
+    if (_isAddingContact || _peerUid.isEmpty) return;
+    setState(() => _isAddingContact = true);
+    try {
+      final target = peerUser ??
+          _fallbackPeerUser(
+            peerUid: _peerUid,
+            thread: thread,
+          );
+      await ref
+          .read(contactsControllerProvider.notifier)
+          .addContact(targetUser: target);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${target.displayName} adicionado aos contatos!'),
+        ),
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAddingContact = false);
+      }
+    }
+  }
+
   void _openImageViewer(ChatMessage message, String senderLabel) {
     Navigator.push(
       context,
@@ -749,6 +786,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       },
     );
 
+    final initialMessages = messagesAsync.value;
+    if (initialMessages != null &&
+        _myUid.isNotEmpty &&
+        thread != null &&
+        thread.unreadFor(_myUid) > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(chatsRepositoryProvider).markChatAsRead(
+              chatId: widget.chatId,
+              currentUid: _myUid,
+              messages: initialMessages,
+              thread: thread,
+            );
+      });
+    }
+
+    final showQuickAddContact =
+        savedContact == null && peerUid.isNotEmpty && peerUid != _myUid;
+
     return PopScope(
       canPop: !_showStickerTray,
       onPopInvokedWithResult: (didPop, _) {
@@ -759,6 +815,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       child: Scaffold(
         appBar: AppBar(
           titleSpacing: 0,
+          actions: [
+            if (showQuickAddContact)
+              IconButton(
+                tooltip: 'Adicionar aos contatos',
+                onPressed: _isAddingContact
+                    ? null
+                    : () => _addPeerToContacts(
+                          peerUser: peerUser,
+                          thread: thread,
+                        ),
+                icon: _isAddingContact
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.person_add_alt_1_outlined),
+              ),
+          ],
           title: Row(
             children: [
               ZapiAvatar(

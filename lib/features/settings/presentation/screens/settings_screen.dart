@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../../core/services/app_update_service.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_exceptions.dart';
@@ -20,9 +22,85 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with WidgetsBindingObserver {
   bool _checkingUpdates = false;
   bool _sendingReset = false;
+  bool _notificationsEnabled = true;
+  bool _backgroundModeEnabled = true;
+  bool _ignoringBattery = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshNotificationStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshNotificationStatus();
+    }
+  }
+
+  Future<void> _refreshNotificationStatus() async {
+    final service = ref.read(notificationServiceProvider);
+    final enabled = await service.areNotificationsEnabled();
+    final bgEnabled = await service.isBackgroundModeEnabled();
+    final ignoringBattery = await service.isIgnoringBatteryOptimizations();
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = enabled;
+        _backgroundModeEnabled = bgEnabled;
+        _ignoringBattery = ignoringBattery;
+      });
+    }
+  }
+
+  Future<void> _handleNotificationsTap() async {
+    final service = ref.read(notificationServiceProvider);
+    final granted = await service.requestPermissionIfNeeded();
+    if (granted) {
+      await _refreshNotificationStatus();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notificações ativadas neste aparelho!'),
+        ),
+      );
+      return;
+    }
+
+    await openAppSettings();
+  }
+
+  Future<void> _toggleBackgroundMode(bool value) async {
+    setState(() => _backgroundModeEnabled = value);
+    await ref.read(notificationServiceProvider).setBackgroundModeEnabled(value);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          value
+              ? 'Recebimento com o aplicativo fechado ativado.'
+              : 'Recebimento com o aplicativo fechado desativado.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _requestBatteryExemption() async {
+    await ref
+        .read(notificationServiceProvider)
+        .requestIgnoreBatteryOptimizations();
+  }
 
   Future<void> _copyPublicId(String value, String label) async {
     await Clipboard.setData(ClipboardData(text: value));
@@ -399,22 +477,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           Card(
             child: Column(
-              children: const [
-                ListTile(
+              children: [
+                const ListTile(
                   leading: Icon(Icons.verified_user_outlined),
                   title: Text('E-mail privado'),
                   subtitle: Text(
-                    'Seu e-mail é visível apenas para você. Outras pessoas encontram você pelo @usuário ou ID.',
+                    'Seu e-mail é visível apenas para você. Outras pessoas encontram você pelo ID ou @usuário.',
                   ),
                 ),
-                Divider(height: 1),
+                const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.notifications_active_outlined),
-                  title: Text('Notificações'),
-                  subtitle: Text(
-                    'Receba alertas de novas mensagens enquanto estiver usando o Zapi.',
+                  leading: Icon(
+                    _notificationsEnabled
+                        ? Icons.notifications_active_outlined
+                        : Icons.notifications_off_outlined,
+                    color: _notificationsEnabled
+                        ? null
+                        : Theme.of(context).colorScheme.error,
                   ),
+                  title: const Text('Notificações'),
+                  subtitle: Text(
+                    _notificationsEnabled
+                        ? 'Ativadas. Você recebe alertas de novas mensagens.'
+                        : 'Desativadas. Toque aqui para ativar nas configurações.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _handleNotificationsTap,
                 ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.mark_chat_unread_outlined),
+                  title: const Text('Alertas com o app fechado'),
+                  subtitle: const Text(
+                    'Mantém o recebimento de mensagens ativo mesmo fora do aplicativo.',
+                  ),
+                  value: _backgroundModeEnabled,
+                  onChanged: _toggleBackgroundMode,
+                ),
+                if (!_ignoringBattery) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.battery_saver_rounded),
+                    title: const Text('Permitir sem restrição de bateria'),
+                    subtitle: const Text(
+                      'Evita que o celular pause seus avisos de mensagens com a tela desligada.',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: _requestBatteryExemption,
+                  ),
+                ],
               ],
             ),
           ),

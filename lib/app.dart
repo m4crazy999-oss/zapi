@@ -84,7 +84,8 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
     if (!mounted || _activeSessionUid != uid) return;
 
     ref.read(presenceServiceProvider).bindUser(uid);
-    unawaited(ref.read(notificationServiceProvider).initializeForUser(uid));
+    await ref.read(notificationServiceProvider).initializeForUser(uid);
+    if (!mounted || _activeSessionUid != uid) return;
     unawaited(_checkForUpdatesIfNeeded());
   }
 

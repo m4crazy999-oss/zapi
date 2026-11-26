@@ -112,6 +112,12 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
         actions: [
           if (!_isSearching)
             IconButton(
+              tooltip: 'Adicionar contato por ID',
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              onPressed: () => context.push('/contacts/add'),
+            ),
+          if (!_isSearching)
+            IconButton(
               tooltip: 'Pesquisar conversas',
               icon: const Icon(Icons.search_rounded),
               onPressed: _toggleSearch,
@@ -129,12 +135,16 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/contacts'),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/contacts/add'),
         backgroundColor: AppColors.emerald,
         foregroundColor: Colors.white,
-        tooltip: 'Nova conversa',
-        child: const Icon(Icons.chat_rounded),
+        tooltip: 'Adicionar contato por ID',
+        icon: const Icon(Icons.person_add_alt_1_rounded),
+        label: const Text(
+          'Adicionar ID',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
       body: chatsAsync.when(
         loading: () => const ZapiListSkeleton(),
@@ -202,16 +212,22 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
                     Text(
                       normalizedQuery.isNotEmpty
                           ? 'Tente buscar por outro nome ou @usuário.'
-                          : 'Adicione um contato pelo @usuário ou ID exclusivo e comece a conversar.',
+                          : 'Adicione alguém pelo ID exclusivo para que ele apareça nos seus Contatos e comece a conversar.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: secondaryText),
                     ),
                     if (normalizedQuery.isEmpty) ...[
                       const SizedBox(height: 20),
                       FilledButton.icon(
+                        onPressed: () => context.push('/contacts/add'),
+                        icon: const Icon(Icons.person_add_alt_1_rounded),
+                        label: const Text('Adicionar por ID'),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
                         onPressed: () => context.go('/contacts'),
                         icon: const Icon(Icons.people_outline_rounded),
-                        label: const Text('Ir para Contatos'),
+                        label: const Text('Ver Contatos'),
                       ),
                     ],
                   ],

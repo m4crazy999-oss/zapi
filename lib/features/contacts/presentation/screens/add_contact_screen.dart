@@ -74,7 +74,9 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${targetUser.displayName} adicionado aos contatos!'),
+          content: Text(
+            '${targetUser.displayName} adicionado! Acesse a aba Contatos para enviar mensagem.',
+          ),
         ),
       );
       context.pop();
@@ -106,7 +108,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
         found != null && existingContacts.containsKey(found.uid);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Adicionar contato')),
+      appBar: AppBar(title: const Text('Adicionar contato por ID')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -117,7 +119,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Digite o @usuário exato ou o ID exclusivo (ex.: ZP-4K8M9P2X) para encontrar a pessoa.',
+                    'Digite o ID exclusivo (ex.: ZP-4K8M9P2X) ou o @usuário da pessoa para adicioná-la aos seus contatos.',
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
@@ -126,8 +128,8 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                   const SizedBox(height: 16),
                   ZapiTextField(
                     controller: _searchController,
-                    label: '@usuário ou ID',
-                    hint: 'ex: @ana.paula ou ZP-4K8M9P2X',
+                    label: 'ID ou @usuário',
+                    hint: 'ex: ZP-4K8M9P2X ou @ana.paula',
                     prefixIcon: Icons.person_search_rounded,
                     textInputAction: TextInputAction.search,
                     enabled: !_searching && !_saving,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../chats/presentation/providers/chats_providers.dart';
 
 class HomeShellScreen extends ConsumerStatefulWidget {
   const HomeShellScreen({
@@ -47,28 +48,43 @@ class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
 
   @override
   Widget build(BuildContext context) {
+    final myUid =
+        ref.watch(authStateProvider.select((s) => s.value?.uid)) ?? '';
+    final chats = ref.watch(userChatsProvider).value ?? const [];
+    final totalUnread = myUid.isEmpty
+        ? 0
+        : chats.fold<int>(0, (sum, c) => sum + c.unreadFor(myUid));
+
     return Scaffold(
       body: widget.navigationShell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: widget.navigationShell.currentIndex,
         onDestinationSelected: _onDestinationSelected,
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
-            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            icon: Badge(
+              isLabelVisible: totalUnread > 0,
+              label: Text(totalUnread > 99 ? '99+' : '$totalUnread'),
+              child: const Icon(Icons.chat_bubble_outline_rounded),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: totalUnread > 0,
+              label: Text(totalUnread > 99 ? '99+' : '$totalUnread'),
+              child: const Icon(Icons.chat_bubble_rounded),
+            ),
             label: 'Conversas',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.donut_large_outlined),
             selectedIcon: Icon(Icons.donut_large_rounded),
             label: 'Status',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.people_outline_rounded),
             selectedIcon: Icon(Icons.people_rounded),
             label: 'Contatos',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings_rounded),
             label: 'Configurações',

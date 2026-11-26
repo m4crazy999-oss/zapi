@@ -50,7 +50,7 @@ class FirebaseErrorMapper {
           );
         case 'operation-not-allowed':
           return const AppException(
-            'O método de login por e-mail/senha não está ativado no Firebase Authentication.',
+            'Não foi possível entrar agora. Tente novamente em instantes.',
           );
         case 'too-many-requests':
           return const AppException(
@@ -74,8 +74,8 @@ class FirebaseErrorMapper {
             'Não foi possível enviar para este endereço de e-mail.',
           );
         default:
-          return AppException(
-            'Não foi possível concluir a autenticação (${error.code}). Tente novamente.',
+          return const AppException(
+            'Não foi possível concluir a autenticação. Tente novamente.',
           );
       }
     }
@@ -90,7 +90,7 @@ class FirebaseErrorMapper {
         case 'permission-denied':
         case 'unauthorized':
           return const AppException(
-            'Permissão negada no Firestore. Verifique se o arquivo firestore.rules atualizado foi publicado no Firebase Console.',
+            'Você não tem permissão para concluir esta ação agora.',
           );
         case 'object-not-found':
         case 'not-found':

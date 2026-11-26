@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/constants/app_constants.dart';
@@ -22,7 +24,9 @@ class ContactsRepository {
   }
 
   Stream<List<AppContact>> watchContacts(String uid) {
-    return _contactsRef(uid).snapshots().map((snapshot) {
+    return _contactsRef(uid)
+        .snapshots(includeMetadataChanges: true)
+        .map((snapshot) {
       final list = snapshot.docs.map(AppContact.fromFirestore).toList();
       list.sort(
         (a, b) => a.effectiveName
@@ -39,7 +43,7 @@ class ContactsRepository {
   }) async {
     final trimmed = rawIdentifier.trim();
     if (trimmed.isEmpty) {
-      throw const AppException('Digite um @usuário ou ID para buscar.');
+      throw const AppException('Digite o ID ou @usuário para buscar.');
     }
 
     try {
@@ -115,7 +119,7 @@ class ContactsRepository {
   }) async {
     final cleanNickname = nickname?.trim();
     try {
-      await _contactsRef(ownerUid).doc(targetUser.uid).set({
+      final writeFuture = _contactsRef(ownerUid).doc(targetUser.uid).set({
         'contactUid': targetUser.uid,
         'nickname':
             (cleanNickname == null || cleanNickname.isEmpty) ? null : cleanNickname,
@@ -126,6 +130,12 @@ class ContactsRepository {
         'about': targetUser.about,
         'addedAt': FieldValue.serverTimestamp(),
       });
+      try {
+        await writeFuture.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        // Rede lenta ou offline: já salvo localmente para sincronização imediata.
+        unawaited(writeFuture.catchError((_) {}));
+      }
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
     }

@@ -17,11 +17,11 @@ final chatsRepositoryProvider = Provider<ChatsRepository>((ref) {
 });
 
 final userChatsProvider = StreamProvider<List<ChatThread>>((ref) {
-  final authUser = ref.watch(authStateProvider).value;
-  if (authUser == null) {
+  final uid = ref.watch(authStateProvider.select((s) => s.value?.uid));
+  if (uid == null || uid.isEmpty) {
     return Stream.value(const []);
   }
-  return ref.watch(chatsRepositoryProvider).watchUserChats(authUser.uid);
+  return ref.watch(chatsRepositoryProvider).watchUserChats(uid);
 });
 
 final chatThreadProvider =

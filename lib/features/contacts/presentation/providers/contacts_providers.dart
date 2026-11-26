@@ -12,11 +12,11 @@ final contactsRepositoryProvider = Provider<ContactsRepository>((ref) {
 });
 
 final contactsListProvider = StreamProvider<List<AppContact>>((ref) {
-  final authUser = ref.watch(authStateProvider).value;
-  if (authUser == null) {
+  final uid = ref.watch(authStateProvider.select((s) => s.value?.uid));
+  if (uid == null || uid.isEmpty) {
     return Stream.value(const []);
   }
-  return ref.watch(contactsRepositoryProvider).watchContacts(authUser.uid);
+  return ref.watch(contactsRepositoryProvider).watchContacts(uid);
 });
 
 final contactsByUidProvider = Provider<Map<String, AppContact>>((ref) {

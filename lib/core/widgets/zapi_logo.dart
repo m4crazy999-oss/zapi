@@ -47,60 +47,67 @@ class _ZapiLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final side = size.shortestSide;
+    if (side <= 0) return;
+
     final offsetX = (size.width - side) / 2;
     final offsetY = (size.height - side) / 2;
-    final w = side;
-    final h = side;
+    final s = side / 1024.0;
 
     canvas.save();
     canvas.translate(offsetX, offsetY);
 
+    final bounds = Rect.fromLTWH(0, 0, side, side);
     final bgRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, w, h),
-      Radius.circular(w * 0.24),
+      bounds,
+      Radius.circular(224.0 * s),
     );
+    canvas.clipRRect(bgRect);
 
     final bgPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [AppColors.emeraldBright, AppColors.emeraldDark],
-      ).createShader(Rect.fromLTWH(0, 0, w, h));
+      ).createShader(bounds);
 
-    canvas.drawRRect(bgRect, bgPaint);
+    canvas.drawRect(bounds, bgPaint);
 
-    final bubblePaint = Paint()..color = Colors.white;
-    final bubblePath = Path();
-    final bubbleRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(w * 0.19, h * 0.19, w * 0.62, h * 0.54),
-      Radius.circular(w * 0.21),
-    );
-    bubblePath.addRRect(bubbleRect);
-
-    // Cauda do balão no canto inferior esquerdo
-    final tailPath = Path()
-      ..moveTo(w * 0.29, h * 0.66)
-      ..lineTo(w * 0.22, h * 0.79)
-      ..lineTo(w * 0.43, h * 0.71)
+    // Balão em contorno único contínuo (sem sobreposição de subpaths ou inversão de winding)
+    final bubblePath = Path()
+      ..moveTo(512.0 * s, 222.0 * s)
+      ..cubicTo(340.79 * s, 222.0 * s, 202.0 * s, 346.29 * s, 202.0 * s, 499.6 * s)
+      ..cubicTo(202.0 * s, 567.7 * s, 229.4 * s, 630.05 * s, 274.88 * s, 678.2 * s)
+      ..lineTo(232.0 * s, 798.0 * s)
+      ..lineTo(361.4 * s, 756.7 * s)
+      ..cubicTo(407.4 * s, 770.1 * s, 458.5 * s, 777.2 * s, 512.0 * s, 777.2 * s)
+      ..cubicTo(683.21 * s, 777.2 * s, 822.0 * s, 652.91 * s, 822.0 * s, 499.6 * s)
+      ..cubicTo(822.0 * s, 346.29 * s, 683.21 * s, 222.0 * s, 512.0 * s, 222.0 * s)
       ..close();
-    bubblePath.addPath(tailPath, Offset.zero);
+
+    final bubblePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
     canvas.drawPath(bubblePath, bubblePaint);
 
-    // Letra Z geométrica em esmeralda
+    // Letra Z desenhada em 3 segmentos independentes com extremidades arredondadas
     final zPaint = Paint()
       ..color = AppColors.emerald
       ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.075
+      ..strokeWidth = 68.0 * s
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
+      ..isAntiAlias = true;
 
-    final zPath = Path()
-      ..moveTo(w * 0.37, h * 0.37)
-      ..lineTo(w * 0.63, h * 0.37)
-      ..lineTo(w * 0.37, h * 0.55)
-      ..lineTo(w * 0.63, h * 0.55);
+    final topLeft = Offset(394.0 * s, 400.0 * s);
+    final topRight = Offset(630.0 * s, 400.0 * s);
+    final bottomLeft = Offset(394.0 * s, 600.0 * s);
+    final bottomRight = Offset(630.0 * s, 600.0 * s);
 
-    canvas.drawPath(zPath, zPaint);
+    canvas.drawLine(topLeft, topRight, zPaint);
+    canvas.drawLine(topRight, bottomLeft, zPaint);
+    canvas.drawLine(bottomLeft, bottomRight, zPaint);
+
     canvas.restore();
   }
 

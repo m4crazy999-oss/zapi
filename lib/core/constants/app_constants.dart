@@ -20,7 +20,7 @@ class AppConstants {
   static const String rtdbPresencePath = 'presence';
 
   // Canal de notificação Android para mensagens
-  static const String messagesNotificationChannelId = 'zapi_messages';
+  static const String messagesNotificationChannelId = 'zapi_messages_v2';
   static const String messagesNotificationChannelName = 'Mensagens';
   static const String messagesNotificationChannelDesc =
       'Notificações de novas mensagens recebidas.';

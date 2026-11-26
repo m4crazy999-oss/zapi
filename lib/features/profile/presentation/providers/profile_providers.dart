@@ -16,19 +16,19 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
 });
 
 final currentUserProfileProvider = StreamProvider<AppUser?>((ref) {
-  final authUser = ref.watch(authStateProvider).value;
-  if (authUser == null) {
+  final uid = ref.watch(authStateProvider.select((s) => s.value?.uid));
+  if (uid == null || uid.isEmpty) {
     return Stream.value(null);
   }
-  return ref.watch(profileRepositoryProvider).watchProfile(authUser.uid);
+  return ref.watch(profileRepositoryProvider).watchProfile(uid);
 });
 
 final privateAccountEmailProvider = StreamProvider<String>((ref) {
-  final authUser = ref.watch(authStateProvider).value;
-  if (authUser == null) {
+  final uid = ref.watch(authStateProvider.select((s) => s.value?.uid));
+  if (uid == null || uid.isEmpty) {
     return Stream.value('');
   }
-  return ref.watch(profileRepositoryProvider).watchPrivateEmail(authUser.uid);
+  return ref.watch(profileRepositoryProvider).watchPrivateEmail(uid);
 });
 
 class ProfileController extends AsyncNotifier<void> {

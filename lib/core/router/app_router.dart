@@ -164,8 +164,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
   ref.read(notificationServiceProvider).attachNavigationHandler((chatId) {
     if (chatId.isEmpty) return;
+    final targetPath = '/chats/$chatId';
+    if (router.routeInformationProvider.value.uri.path == targetPath) {
+      return;
+    }
     router.go('/chats');
-    router.push('/chats/$chatId');
+    router.push(targetPath);
   });
 
   return router;
