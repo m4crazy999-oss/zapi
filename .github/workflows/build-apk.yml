@@ -25,11 +25,17 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      - name: Configurar Flutter estável
+      - name: Configurar Flutter estável (versão fixa testada)
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: "stable"
+          flutter-version: "3.38.10"
           cache: true
+
+      - name: Verificar versões do Flutter e Java
+        run: |
+          flutter --version
+          java -version
 
       - name: Validar presença dos Secrets obrigatórios
         run: |
@@ -78,7 +84,7 @@ jobs:
           dart run flutter_native_splash:create
 
       - name: Analisar código Dart
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: flutter analyze
 
       - name: Compilar APK Release com versionamento automático
         run: |
