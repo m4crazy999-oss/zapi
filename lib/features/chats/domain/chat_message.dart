@@ -38,7 +38,7 @@ class MessageTypes {
         return '🎤 Áudio $dur';
       case sticker:
         return 'Figurinha';
-      case text:
+      case 'text':
       default:
         return clean.length > 120 ? '${clean.substring(0, 117)}...' : clean;
     }

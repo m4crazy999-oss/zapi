@@ -65,7 +65,6 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
           unawaited(ref.read(notificationServiceProvider).clearSession());
         }
       },
-      fireImmediately: true,
     );
 
     return MaterialApp.router(
