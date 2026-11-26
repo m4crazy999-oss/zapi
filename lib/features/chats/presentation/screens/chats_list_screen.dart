@@ -87,7 +87,7 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
       builder: (sheetCtx) {
         return Consumer(
           builder: (context, ref, _) {
-            final contactsAsync = ref.watch(contactsProvider);
+            final contactsAsync = ref.watch(contactsListProvider);
             final isDark = Theme.of(context).brightness == Brightness.dark;
             final secondaryText = isDark
                 ? AppColors.darkTextSecondary
