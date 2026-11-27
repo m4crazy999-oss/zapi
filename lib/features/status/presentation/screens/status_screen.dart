@@ -201,9 +201,9 @@ class StatusScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
           boardAsync.when(
-            loading: () => const Padding(
+            loading: () => Padding(
               padding: EdgeInsets.only(top: 12),
-              child: ChatListSkeleton(itemCount: 4),
+              child: Center(child: CircularProgressIndicator()),
             ),
             error: (_, __) => Padding(
               padding: const EdgeInsets.all(24),
