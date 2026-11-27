@@ -377,7 +377,7 @@ class _SheetPinPad extends StatelessWidget {
         width: 64,
         height: 54,
         child: Material(
-          color: isDark ? AppColors.darkBg : AppColors.lightBg,
+          color: isDark ? AppColors.darkBackground : AppColors.lightBackground,
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
