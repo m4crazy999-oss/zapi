@@ -21,11 +21,24 @@ class AppConstants {
   // Caminho para presença em tempo real
   static const String rtdbPresencePath = 'presence';
 
-  // Canal de notificação Android para mensagens
-  static const String messagesNotificationChannelId = 'zapi_messages_v2';
+  // Canais de notificação Android para mensagens (combinações de som e vibração)
+  static const String messagesChannelSoundVibrateId = 'zapi_messages_sv';
+  static const String messagesChannelSoundOnlyId = 'zapi_messages_s';
+  static const String messagesChannelVibrateOnlyId = 'zapi_messages_v';
+  static const String messagesChannelSilentId = 'zapi_messages_silent';
   static const String messagesNotificationChannelName = 'Mensagens';
   static const String messagesNotificationChannelDesc =
       'Notificações de novas mensagens recebidas.';
+
+  static String notificationChannelId({
+    required bool sound,
+    required bool vibration,
+  }) {
+    if (sound && vibration) return messagesChannelSoundVibrateId;
+    if (sound) return messagesChannelSoundOnlyId;
+    if (vibration) return messagesChannelVibrateOnlyId;
+    return messagesChannelSilentId;
+  }
 
   // Paginação e limites de chat
   static const int messagesPageSize = 30;
@@ -52,6 +65,9 @@ class AppConstants {
   static const int maxStatusTextLength = 500;
   static const int maxStatusImageBytes = 450 * 1024;
   static const int maxStatusImageBase64Chars = 620000;
+  static const int maxStatusVideoBytes = 700 * 1024;
+  static const int maxStatusVideoBase64Chars = 960000;
+  static const Duration maxStatusVideoDuration = Duration(seconds: 60);
   static const int statusDurationHours = 24;
 
   static const String defaultBannerPreset = 'aurora';
@@ -60,25 +76,10 @@ class AppConstants {
   static const int audioSampleRate = 44100;
   static const Duration maxAudioDuration = Duration(minutes: 3);
   static const int maxChatAudioBytes = 900 * 1024;
+  static const int maxChatFileBytes = 680 * 1024;
+  static const int maxChatVideoBytes = 700 * 1024;
   static const int maxFirestoreMediaBase64Chars = 980000;
 
   static const int stickerSizePx = 512;
   static const int maxStickerBytes = 100 * 1024;
-
-  // Figurinhas originais empacotadas no aplicativo
-  static const List<({String id, String label, String assetPath})>
-      builtInStickers = [
-    (id: 'builtin_oi', label: 'Oi!', assetPath: 'asset://assets/stickers/zapi_oi.png'),
-    (id: 'builtin_feliz', label: 'Feliz', assetPath: 'asset://assets/stickers/zapi_feliz.png'),
-    (id: 'builtin_coracao', label: 'Coração', assetPath: 'asset://assets/stickers/zapi_coracao.png'),
-    (id: 'builtin_riso', label: 'Riso', assetPath: 'asset://assets/stickers/zapi_riso.png'),
-    (id: 'builtin_apaixonado', label: 'Apaixonado', assetPath: 'asset://assets/stickers/zapi_apaixonado.png'),
-    (id: 'builtin_surpreso', label: 'Surpreso', assetPath: 'asset://assets/stickers/zapi_surpreso.png'),
-    (id: 'builtin_piscadinha', label: 'Piscadinha', assetPath: 'asset://assets/stickers/zapi_piscadinha.png'),
-    (id: 'builtin_joinha', label: 'Joinha', assetPath: 'asset://assets/stickers/zapi_joinha.png'),
-    (id: 'builtin_festa', label: 'Festa', assetPath: 'asset://assets/stickers/zapi_festa.png'),
-    (id: 'builtin_cafe', label: 'Café', assetPath: 'asset://assets/stickers/zapi_cafe.png'),
-    (id: 'builtin_fogo', label: 'Fogo', assetPath: 'asset://assets/stickers/zapi_fogo.png'),
-    (id: 'builtin_ok', label: 'OK!', assetPath: 'asset://assets/stickers/zapi_ok.png'),
-  ];
 }

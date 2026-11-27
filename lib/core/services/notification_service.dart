@@ -23,9 +23,11 @@ class NotificationService {
     required FirebaseAuth auth,
     required FirebaseFirestore firestore,
     bool Function(String chatId)? isChatMuted,
+    ({bool sound, bool vibration}) Function()? readSoundVibration,
   })  : _auth = auth,
         _firestore = firestore,
-        _isChatMuted = isChatMuted {
+        _isChatMuted = isChatMuted,
+        _readSoundVibration = readSoundVibration {
     if (Platform.isAndroid) {
       _bgChannel.setMethodCallHandler((call) async {
         if (call.method == 'openChat') {
@@ -44,6 +46,20 @@ class NotificationService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final bool Function(String chatId)? _isChatMuted;
+  final ({bool sound, bool vibration}) Function()? _readSoundVibration;
+
+  static Future<void> syncNativeSoundVibration({
+    required bool sound,
+    required bool vibration,
+  }) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _bgChannel.invokeMethod<void>('setNotificationPrefs', {
+        'sound': sound,
+        'vibration': vibration,
+      });
+    } catch (_) {}
+  }
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chatsSub;
   final Map<String, String> _lastNotifiedMessageByChat = {};
@@ -82,19 +98,48 @@ class NotificationService {
       },
     );
 
-    const channel = AndroidNotificationChannel(
-      AppConstants.messagesNotificationChannelId,
-      AppConstants.messagesNotificationChannelName,
-      description: AppConstants.messagesNotificationChannelDesc,
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-    );
-
     final androidPlugin =
         zapiLocalNotifications.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.createNotificationChannel(channel);
+    if (androidPlugin != null) {
+      const channels = [
+        AndroidNotificationChannel(
+          AppConstants.messagesChannelSoundVibrateId,
+          AppConstants.messagesNotificationChannelName,
+          description: AppConstants.messagesNotificationChannelDesc,
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+        ),
+        AndroidNotificationChannel(
+          AppConstants.messagesChannelSoundOnlyId,
+          'Mensagens (somente som)',
+          description: AppConstants.messagesNotificationChannelDesc,
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: false,
+        ),
+        AndroidNotificationChannel(
+          AppConstants.messagesChannelVibrateOnlyId,
+          'Mensagens (somente vibração)',
+          description: AppConstants.messagesNotificationChannelDesc,
+          importance: Importance.max,
+          playSound: false,
+          enableVibration: true,
+        ),
+        AndroidNotificationChannel(
+          AppConstants.messagesChannelSilentId,
+          'Mensagens (silencioso)',
+          description: AppConstants.messagesNotificationChannelDesc,
+          importance: Importance.low,
+          playSound: false,
+          enableVibration: false,
+        ),
+      ];
+      for (final ch in channels) {
+        await androidPlugin.createNotificationChannel(ch);
+      }
+    }
   }
 
   void attachNavigationHandler(void Function(String chatId) onOpenChat) {
@@ -372,18 +417,26 @@ class NotificationService {
       );
     }
 
-    const androidDetails = AndroidNotificationDetails(
-      AppConstants.messagesNotificationChannelId,
+    final prefs =
+        _readSoundVibration?.call() ?? (sound: true, vibration: true);
+    final channelId = AppConstants.notificationChannelId(
+      sound: prefs.sound,
+      vibration: prefs.vibration,
+    );
+    final silent = !prefs.sound && !prefs.vibration;
+
+    final androidDetails = AndroidNotificationDetails(
+      channelId,
       AppConstants.messagesNotificationChannelName,
       channelDescription: AppConstants.messagesNotificationChannelDesc,
-      importance: Importance.max,
-      priority: Priority.high,
+      importance: silent ? Importance.low : Importance.max,
+      priority: silent ? Priority.low : Priority.high,
       icon: '@drawable/ic_stat_zapi',
-      color: Color(0xFF00A884),
+      color: const Color(0xFF00A884),
       category: AndroidNotificationCategory.message,
       visibility: NotificationVisibility.public,
-      playSound: true,
-      enableVibration: true,
+      playSound: prefs.sound,
+      enableVibration: prefs.vibration,
       autoCancel: true,
       ticker: 'Nova mensagem no Zapi',
     );
@@ -392,7 +445,7 @@ class NotificationService {
       chatId.hashCode,
       title,
       body,
-      const NotificationDetails(android: androidDetails),
+      NotificationDetails(android: androidDetails),
       payload: chatId,
     );
   }
@@ -449,6 +502,13 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
     auth: ref.watch(firebaseAuthProvider),
     firestore: ref.watch(firebaseFirestoreProvider),
     isChatMuted: (chatId) => ref.read(chatPreferencesProvider).isMuted(chatId),
+    readSoundVibration: () {
+      final prefs = ref.read(chatPreferencesProvider);
+      return (
+        sound: prefs.notifSoundEnabled,
+        vibration: prefs.notifVibrationEnabled,
+      );
+    },
   );
   ref.onDispose(() {
     service.dispose();

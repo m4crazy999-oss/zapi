@@ -8,6 +8,7 @@ import 'package:gal/gal.dart';
 
 import '../../../../core/services/media_cache_service.dart';
 import '../../../../core/utils/permission_helper.dart';
+import '../../../../core/utils/zapi_toast.dart';
 
 class FullscreenImageViewer extends ConsumerStatefulWidget {
   const FullscreenImageViewer({
@@ -43,6 +44,7 @@ class _FullscreenImageViewerState
   final _transformationController = TransformationController();
   double _dragOffsetY = 0;
   bool _isSaving = false;
+  bool _savedRecently = false;
   bool _showOverlay = true;
   File? _resolvedFile;
   bool _loadingFull = false;
@@ -119,7 +121,10 @@ class _FullscreenImageViewerState
     final granted = await PermissionHelper.requestGallery(context);
     if (!granted || !mounted) return;
 
-    setState(() => _isSaving = true);
+    setState(() {
+      _isSaving = true;
+      _savedRecently = false;
+    });
     try {
       var fileToSave = _resolvedFile;
       if (fileToSave == null &&
@@ -138,18 +143,14 @@ class _FullscreenImageViewerState
       }
 
       await Gal.putImage(fileToSave.path, album: 'Zapi');
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto salva na galeria (álbum Zapi).')),
-      );
+      if (mounted) {
+        setState(() => _savedRecently = true);
+      }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível salvar a foto na galeria.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      ZapiToast.showError(
+        context,
+        'Não foi possível salvar a foto na galeria.',
       );
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -278,7 +279,11 @@ class _FullscreenImageViewerState
                               color: Colors.white,
                             ),
                           )
-                        : const Icon(Icons.download_rounded),
+                        : Icon(
+                            _savedRecently
+                                ? Icons.check_rounded
+                                : Icons.download_rounded,
+                          ),
                   ),
                 ],
               ),

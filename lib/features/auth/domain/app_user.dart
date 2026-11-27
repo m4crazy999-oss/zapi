@@ -17,6 +17,8 @@ class AppUser {
     this.lastSeen,
     this.blockedUids = const [],
     this.activeChatId,
+    this.hideLastSeen = false,
+    this.hideReadReceipts = false,
   });
 
   final String uid;
@@ -32,6 +34,8 @@ class AppUser {
   final DateTime? lastSeen;
   final List<String> blockedUids;
   final String? activeChatId;
+  final bool hideLastSeen;
+  final bool hideReadReceipts;
 
   bool get hasPhoto =>
       (photoBase64 != null && photoBase64!.trim().isNotEmpty) ||
@@ -62,6 +66,8 @@ class AppUser {
           ? rawBlocked.whereType<String>().toList()
           : const [],
       activeChatId: data['activeChatId'] as String?,
+      hideLastSeen: data['hideLastSeen'] as bool? ?? false,
+      hideReadReceipts: data['hideReadReceipts'] as bool? ?? false,
     );
   }
 
@@ -80,6 +86,8 @@ class AppUser {
     DateTime? lastSeen,
     List<String>? blockedUids,
     String? activeChatId,
+    bool? hideLastSeen,
+    bool? hideReadReceipts,
   }) {
     return AppUser(
       uid: uid ?? this.uid,
@@ -96,6 +104,8 @@ class AppUser {
       lastSeen: lastSeen ?? this.lastSeen,
       blockedUids: blockedUids ?? this.blockedUids,
       activeChatId: activeChatId ?? this.activeChatId,
+      hideLastSeen: hideLastSeen ?? this.hideLastSeen,
+      hideReadReceipts: hideReadReceipts ?? this.hideReadReceipts,
     );
   }
 }

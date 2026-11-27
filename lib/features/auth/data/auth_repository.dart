@@ -32,6 +32,8 @@ class AuthRepository {
     'lastSeen',
     'blockedUids',
     'activeChatId',
+    'hideLastSeen',
+    'hideReadReceipts',
   };
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
@@ -174,6 +176,8 @@ class AuthRepository {
           'lastSeen': FieldValue.serverTimestamp(),
           'blockedUids': <String>[],
           'activeChatId': null,
+          'hideLastSeen': false,
+          'hideReadReceipts': false,
         });
 
         if (email.isNotEmpty) {

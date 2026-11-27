@@ -11,31 +11,12 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
+import '../../../../core/utils/zapi_toast.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../data/unicode_emoji_data.dart';
 import '../../domain/zapi_sticker.dart';
 import '../providers/stickers_providers.dart';
 import 'zapi_sticker_image.dart';
-
-class _EmojiEntry {
-  const _EmojiEntry(this.emoji, this.keywords);
-
-  final String emoji;
-  final String keywords;
-}
-
-class _EmojiCategory {
-  const _EmojiCategory({
-    required this.id,
-    required this.title,
-    required this.icon,
-    required this.items,
-  });
-
-  final String id;
-  final String title;
-  final IconData icon;
-  final List<_EmojiEntry> items;
-}
 
 class StickerTray extends ConsumerStatefulWidget {
   const StickerTray({
@@ -56,243 +37,6 @@ class _StickerTrayState extends ConsumerState<StickerTray>
   late final TabController _tabController;
   int _activeTab = 0;
 
-  static const List<_EmojiCategory> _emojiCategories = [
-    _EmojiCategory(
-      id: 'expressoes',
-      title: 'Expressões',
-      icon: Icons.sentiment_satisfied_alt_rounded,
-      items: [
-        _EmojiEntry('😀', 'sorriso feliz alegre'),
-        _EmojiEntry('😄', 'sorrindo feliz alegria'),
-        _EmojiEntry('😁', 'sorriso dentes feliz'),
-        _EmojiEntry('😆', 'risada rindo gargalhada'),
-        _EmojiEntry('🥹', 'emocionado lagrima feliz'),
-        _EmojiEntry('😂', 'chorando de rir riso comedia'),
-        _EmojiEntry('🤣', 'rolando de rir gargalhada'),
-        _EmojiEntry('😊', 'sorriso simpatico timido'),
-        _EmojiEntry('😇', 'anjo inocente santo'),
-        _EmojiEntry('🙂', 'leve sorriso ok'),
-        _EmojiEntry('🙃', 'de cabeca para baixo ironia'),
-        _EmojiEntry('😉', 'piscadinha piscando'),
-        _EmojiEntry('😌', 'alivio calmo paz'),
-        _EmojiEntry('😍', 'apaixonado coracao olhos'),
-        _EmojiEntry('🥰', 'carinho amor coracoes'),
-        _EmojiEntry('😘', 'beijo beijinho amor'),
-        _EmojiEntry('😗', 'beijo'),
-        _EmojiEntry('😋', 'delicia comida gostoso'),
-        _EmojiEntry('😛', 'lingua brincadeira'),
-        _EmojiEntry('😜', 'piscando lingua doido'),
-        _EmojiEntry('🤪', 'maluco divertido zoeira'),
-        _EmojiEntry('🤨', 'desconfiado sobrancelha'),
-        _EmojiEntry('🧐', 'curioso monoculo investigando'),
-        _EmojiEntry('🤓', 'nerd oculos inteligente'),
-        _EmojiEntry('😎', 'oculos escuro estilo legal'),
-        _EmojiEntry('🤩', 'estrelas deslumbrado incrivel'),
-        _EmojiEntry('🥳', 'festa aniversario comemoracao'),
-        _EmojiEntry('😏', 'sorriso maroto malicioso'),
-        _EmojiEntry('😒', 'entediado chateado'),
-        _EmojiEntry('😔', 'triste pensativo'),
-        _EmojiEntry('😟', 'preocupado triste'),
-        _EmojiEntry('😕', 'confuso duvida'),
-        _EmojiEntry('🙁', 'triste chateado'),
-        _EmojiEntry('😣', 'esforco tenso'),
-        _EmojiEntry('😫', 'cansado exausto'),
-        _EmojiEntry('😢', 'chorando lagrima triste'),
-        _EmojiEntry('😭', 'chorando muito pranto'),
-        _EmojiEntry('😤', 'bravo bufando raiva'),
-        _EmojiEntry('😠', 'raiva bravo irritado'),
-        _EmojiEntry('😡', 'muito bravo furioso'),
-        _EmojiEntry('🤯', 'mente explodindo chocado'),
-        _EmojiEntry('😳', 'vergonha corado surpreso'),
-        _EmojiEntry('🥵', 'calor quente suando'),
-        _EmojiEntry('🥶', 'frio congelando gelado'),
-        _EmojiEntry('😱', 'medo susto grito'),
-        _EmojiEntry('😨', 'assustado medo'),
-        _EmojiEntry('🥺', 'pidonho olhinhos fofo'),
-        _EmojiEntry('😬', 'sem graca nervoso'),
-        _EmojiEntry('😴', 'sono dormindo zzz'),
-        _EmojiEntry('😪', 'sonolento cansado'),
-        _EmojiEntry('🤗', 'abraco carinho'),
-        _EmojiEntry('🤔', 'pensando duvida reflexao'),
-        _EmojiEntry('🤭', 'risadinha segredo mao boca'),
-        _EmojiEntry('🤫', 'silencio segredo shhh'),
-        _EmojiEntry('🫠', 'derretendo vergonha calor'),
-        _EmojiEntry('🫡', 'continencia respeito'),
-      ],
-    ),
-    _EmojiCategory(
-      id: 'gestos',
-      title: 'Gestos e mãos',
-      icon: Icons.thumb_up_rounded,
-      items: [
-        _EmojiEntry('👍', 'joinha legal positivo ok sim'),
-        _EmojiEntry('👎', 'negativo nao deslike'),
-        _EmojiEntry('👏', 'palmas aplausos parabens'),
-        _EmojiEntry('🙌', 'comemoracao maos alto'),
-        _EmojiEntry('🫶', 'coracao maos amor'),
-        _EmojiEntry('🤝', 'aperto de mao acordo fechado'),
-        _EmojiEntry('🙏', 'por favor obrigado oracao'),
-        _EmojiEntry('✌️', 'paz vitoria dois'),
-        _EmojiEntry('🤞', 'dedos cruzados sorte'),
-        _EmojiEntry('🤟', 'amor rock mao'),
-        _EmojiEntry('🤘', 'rock'),
-        _EmojiEntry('👌', 'ok perfeito beleza'),
-        _EmojiEntry('🤌', 'italiano gesto'),
-        _EmojiEntry('👋', 'tchau oi aceno'),
-        _EmojiEntry('🤚', 'pare mao levantada'),
-        _EmojiEntry('💪', 'forca musculo academia'),
-        _EmojiEntry('☝️', 'atencao um dedo'),
-        _EmojiEntry('👉', 'apontando direita'),
-        _EmojiEntry('👈', 'apontando esquerda'),
-        _EmojiEntry('👀', 'olhos olhando curioso'),
-        _EmojiEntry('🧠', 'cerebro ideia mente'),
-        _EmojiEntry('👑', 'coroa rei rainha'),
-        _EmojiEntry('🔥', 'fogo quente top incrivel'),
-        _EmojiEntry('✨', 'brilho estrelas magia'),
-        _EmojiEntry('💥', 'explosao impacto'),
-        _EmojiEntry('💯', 'cem por cento perfeito'),
-        _EmojiEntry('🎉', 'festa confete parabens'),
-        _EmojiEntry('🎊', 'comemoracao festa'),
-        _EmojiEntry('🏆', 'trofeu campeao vitoria'),
-        _EmojiEntry('⚡', 'raio energia rapido'),
-      ],
-    ),
-    _EmojiCategory(
-      id: 'coracoes',
-      title: 'Corações e carinho',
-      icon: Icons.favorite_rounded,
-      items: [
-        _EmojiEntry('❤️', 'coracao vermelho amor'),
-        _EmojiEntry('🧡', 'coracao laranja'),
-        _EmojiEntry('💛', 'coracao amarelo amizade'),
-        _EmojiEntry('💚', 'coracao verde'),
-        _EmojiEntry('💙', 'coracao azul'),
-        _EmojiEntry('💜', 'coracao roxo'),
-        _EmojiEntry('🩷', 'coracao rosa'),
-        _EmojiEntry('🩵', 'coracao azul claro'),
-        _EmojiEntry('🤍', 'coracao branco paz'),
-        _EmojiEntry('🖤', 'coracao preto'),
-        _EmojiEntry('💔', 'coracao partido tristeza'),
-        _EmojiEntry('❤️‍🔥', 'coracao em chamas paixao'),
-        _EmojiEntry('💖', 'coracao brilhando amor'),
-        _EmojiEntry('💘', 'coracao flecha cupido'),
-        _EmojiEntry('💝', 'coracao presente'),
-        _EmojiEntry('💞', 'coracoes girando'),
-        _EmojiEntry('💋', 'beijo batom'),
-        _EmojiEntry('🌹', 'rosa flor romance'),
-        _EmojiEntry('💐', 'buque flores'),
-        _EmojiEntry('☀️', 'sol dia bom dia'),
-        _EmojiEntry('🌙', 'lua boa noite'),
-        _EmojiEntry('⭐', 'estrela favorito'),
-        _EmojiEntry('🌈', 'arco iris'),
-      ],
-    ),
-    _EmojiCategory(
-      id: 'natureza',
-      title: 'Animais e natureza',
-      icon: Icons.pets_rounded,
-      items: [
-        _EmojiEntry('🐶', 'cachorro cao pet'),
-        _EmojiEntry('🐱', 'gato gatinho pet'),
-        _EmojiEntry('🐭', 'rato'),
-        _EmojiEntry('🐰', 'coelho'),
-        _EmojiEntry('🦊', 'raposa'),
-        _EmojiEntry('🐻', 'urso'),
-        _EmojiEntry('🐼', 'panda'),
-        _EmojiEntry('🦁', 'leao'),
-        _EmojiEntry('🐸', 'sapo'),
-        _EmojiEntry('🐵', 'macaco'),
-        _EmojiEntry('🐧', 'pinguim'),
-        _EmojiEntry('🦋', 'borboleta'),
-        _EmojiEntry('🐝', 'abelha'),
-        _EmojiEntry('🐢', 'tartaruga'),
-        _EmojiEntry('🐬', 'golfinho'),
-        _EmojiEntry('🌸', 'flor cerejeira'),
-        _EmojiEntry('🌻', 'girassol'),
-        _EmojiEntry('🍀', 'trevo sorte'),
-        _EmojiEntry('🌴', 'praia palmeira'),
-        _EmojiEntry('🌊', 'onda mar praia'),
-        _EmojiEntry('☔', 'chuva guarda chuva'),
-        _EmojiEntry('❄️', 'neve frio'),
-      ],
-    ),
-    _EmojiCategory(
-      id: 'comidas',
-      title: 'Comidas e bebidas',
-      icon: Icons.restaurant_rounded,
-      items: [
-        _EmojiEntry('☕', 'cafe manha xicara'),
-        _EmojiEntry('🍵', 'cha verde'),
-        _EmojiEntry('🧃', 'suco caixinha'),
-        _EmojiEntry('🍺', 'cerveja bar'),
-        _EmojiEntry('🥂', 'brinde festa taca'),
-        _EmojiEntry('🍕', 'pizza lanche'),
-        _EmojiEntry('🍔', 'hamburguer lanche'),
-        _EmojiEntry('🍟', 'batata frita'),
-        _EmojiEntry('🌭', 'cachorro quente'),
-        _EmojiEntry('🌮', 'taco'),
-        _EmojiEntry('🍣', 'sushi japones'),
-        _EmojiEntry('🍝', 'macarrao massa'),
-        _EmojiEntry('🍰', 'bolo fatia doce'),
-        _EmojiEntry('🎂', 'bolo aniversario festa'),
-        _EmojiEntry('🍫', 'chocolate doce'),
-        _EmojiEntry('🍦', 'sorvete'),
-        _EmojiEntry('🍿', 'pipoca filme'),
-        _EmojiEntry('🍓', 'morango fruta'),
-        _EmojiEntry('🍉', 'melancia fruta'),
-        _EmojiEntry('🥑', 'abacate'),
-      ],
-    ),
-    _EmojiCategory(
-      id: 'lazer',
-      title: 'Lazer e esportes',
-      icon: Icons.sports_soccer_rounded,
-      items: [
-        _EmojiEntry('⚽', 'futebol bola gol'),
-        _EmojiEntry('🏀', 'basquete bola'),
-        _EmojiEntry('🎮', 'videogame jogo controle'),
-        _EmojiEntry('🎧', 'fone musica som'),
-        _EmojiEntry('🎵', 'musica nota som'),
-        _EmojiEntry('🎸', 'guitarra violao rock'),
-        _EmojiEntry('🎬', 'cinema filme'),
-        _EmojiEntry('📸', 'camera foto'),
-        _EmojiEntry('✈️', 'aviao viagem ferias'),
-        _EmojiEntry('🚗', 'carro viagem'),
-        _EmojiEntry('🚲', 'bicicleta bike'),
-        _EmojiEntry('🏖️', 'praia sol ferias'),
-        _EmojiEntry('🎁', 'presente surpresa'),
-        _EmojiEntry('🎈', 'balao festa'),
-        _EmojiEntry('🎯', 'alvo foco meta'),
-        _EmojiEntry('🎲', 'dado jogo sorte'),
-      ],
-    ),
-    _EmojiCategory(
-      id: 'objetos',
-      title: 'Objetos e símbolos',
-      icon: Icons.lightbulb_rounded,
-      items: [
-        _EmojiEntry('💡', 'ideia lampada dica'),
-        _EmojiEntry('📱', 'celular telefone'),
-        _EmojiEntry('💻', 'notebook computador trabalho'),
-        _EmojiEntry('⌚', 'relogio hora'),
-        _EmojiEntry('📚', 'livros estudo ler'),
-        _EmojiEntry('📝', 'nota escrever texto'),
-        _EmojiEntry('🔒', 'cadeado seguranca privado'),
-        _EmojiEntry('🔑', 'chave'),
-        _EmojiEntry('💰', 'dinheiro'),
-        _EmojiEntry('📅', 'calendario data agenda'),
-        _EmojiEntry('📍', 'localizacao mapa ponto'),
-        _EmojiEntry('🔔', 'sino notificacao alerta'),
-        _EmojiEntry('✅', 'certo concluido check'),
-        _EmojiEntry('❌', 'erro cancelar x'),
-        _EmojiEntry('⚠️', 'aviso atencao alerta'),
-        _EmojiEntry('❓', 'duvida pergunta'),
-        _EmojiEntry('❗', 'exclamacao importante'),
-        _EmojiEntry('💬', 'conversa mensagem balao'),
-      ],
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -308,6 +52,14 @@ class _StickerTrayState extends ConsumerState<StickerTray>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openCreateSticker() async {
+    final created = await context.push<ZapiSticker>('/stickers/create');
+    if (created != null && mounted) {
+      ref.read(recentStickerIdsProvider.notifier).markUsed(created);
+      widget.onStickerSelected(created);
+    }
   }
 
   Future<void> _showStickerOptions(ZapiSticker sticker) async {
@@ -343,39 +95,34 @@ class _StickerTrayState extends ConsumerState<StickerTray>
                         );
                   } on AppException catch (e) {
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(e.message)),
-                    );
+                    ZapiToast.showError(context, e.message, bottomOffset: 80);
                   }
                 },
               ),
-              if (!sticker.isBuiltIn)
-                ListTile(
-                  leading: Icon(
-                    Icons.delete_rounded,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  title: Text(
-                    'Excluir figurinha',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onTap: () async {
-                    Navigator.pop(sheetCtx);
-                    try {
-                      await ref
-                          .read(stickersRepositoryProvider)
-                          .deleteCustomSticker(uid: uid, sticker: sticker);
-                    } on AppException catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(e.message)),
-                      );
-                    }
-                  },
+              ListTile(
+                leading: Icon(
+                  Icons.delete_rounded,
+                  color: Theme.of(context).colorScheme.error,
                 ),
+                title: Text(
+                  'Excluir figurinha',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  try {
+                    await ref
+                        .read(stickersRepositoryProvider)
+                        .deleteCustomSticker(uid: uid, sticker: sticker);
+                  } on AppException catch (e) {
+                    if (!mounted) return;
+                    ZapiToast.showError(context, e.message, bottomOffset: 80);
+                  }
+                },
+              ),
             ],
           ),
         );
@@ -434,16 +181,7 @@ class _StickerTrayState extends ConsumerState<StickerTray>
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: TextButton.icon(
-                    onPressed: () async {
-                      final created =
-                          await context.push<ZapiSticker>('/stickers/create');
-                      if (created != null && mounted) {
-                        ref
-                            .read(recentStickerIdsProvider.notifier)
-                            .markUsed(created);
-                        widget.onStickerSelected(created);
-                      }
-                    },
+                    onPressed: _openCreateSticker,
                     icon: const Icon(Icons.add_rounded, size: 18),
                     label: const Text('Criar'),
                   ),
@@ -455,7 +193,6 @@ class _StickerTrayState extends ConsumerState<StickerTray>
               controller: _tabController,
               children: [
                 _EmojiPickerView(
-                  categories: _emojiCategories,
                   onSelected: (emoji) {
                     HapticFeedback.selectionClick();
                     widget.onEmojiSelected?.call(emoji);
@@ -464,7 +201,7 @@ class _StickerTrayState extends ConsumerState<StickerTray>
                 _StickerGrid(
                   stickers: recents,
                   emptyText:
-                      'Suas figurinhas enviadas recentemente aparecerão aqui.',
+                      'Suas figurinhas criadas e usadas aparecerão aqui.',
                   onTap: (s) {
                     ref.read(recentStickerIdsProvider.notifier).markUsed(s);
                     widget.onStickerSelected(s);
@@ -474,7 +211,7 @@ class _StickerTrayState extends ConsumerState<StickerTray>
                 _StickerGrid(
                   stickers: favorites,
                   emptyText:
-                      'Segure qualquer figurinha na bandeja para adicioná-la às favoritas.',
+                      'Segure qualquer figurinha sua para adicioná-la às favoritas.',
                   onTap: (s) {
                     ref.read(recentStickerIdsProvider.notifier).markUsed(s);
                     widget.onStickerSelected(s);
@@ -484,7 +221,9 @@ class _StickerTrayState extends ConsumerState<StickerTray>
                 _StickerGrid(
                   stickers: allStickers,
                   emptyText:
-                      'Toque em "Criar" para fazer sua primeira figurinha.',
+                      'Crie suas próprias figurinhas com fotos da galeria ou da câmera.',
+                  emptyActionLabel: 'Criar figurinha',
+                  onCreatePressed: _openCreateSticker,
                   onTap: (s) {
                     ref.read(recentStickerIdsProvider.notifier).markUsed(s);
                     widget.onStickerSelected(s);
@@ -502,11 +241,9 @@ class _StickerTrayState extends ConsumerState<StickerTray>
 
 class _EmojiPickerView extends StatefulWidget {
   const _EmojiPickerView({
-    required this.categories,
     required this.onSelected,
   });
 
-  final List<_EmojiCategory> categories;
   final ValueChanged<String> onSelected;
 
   @override
@@ -515,11 +252,14 @@ class _EmojiPickerView extends StatefulWidget {
 
 class _EmojiPickerViewState extends State<_EmojiPickerView> {
   static List<String>? _memoryRecents;
+  static int? _memoryToneIndex;
 
   final TextEditingController _searchController = TextEditingController();
   String _selectedCategoryId = 'all';
   String _query = '';
   List<String> _recentEmojis = const [];
+  int _selectedToneIndex = 0;
+  bool _showToneBar = false;
 
   @override
   void initState() {
@@ -528,6 +268,12 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
       _recentEmojis = List<String>.from(_memoryRecents!);
     } else {
       unawaited(_loadRecents());
+    }
+
+    if (_memoryToneIndex != null) {
+      _selectedToneIndex = _memoryToneIndex!;
+    } else {
+      unawaited(_loadSkinTone());
     }
   }
 
@@ -542,13 +288,18 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
     return File(p.join(dir.path, 'zapi_recent_emojis_v1.json'));
   }
 
+  Future<File> _toneFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File(p.join(dir.path, 'zapi_emoji_tone_v1.json'));
+  }
+
   Future<void> _loadRecents() async {
     try {
       final file = await _recentsFile();
       if (!await file.exists()) return;
       final decoded = jsonDecode(await file.readAsString());
       if (decoded is List) {
-        final list = decoded.whereType<String>().take(24).toList();
+        final list = decoded.whereType<String>().take(32).toList();
         _memoryRecents = list;
         if (mounted) {
           setState(() => _recentEmojis = list);
@@ -557,11 +308,39 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
     } catch (_) {}
   }
 
+  Future<void> _loadSkinTone() async {
+    try {
+      final file = await _toneFile();
+      if (!await file.exists()) return;
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is int &&
+          decoded >= 0 &&
+          decoded < UnicodeEmojiCatalog.skinTones.length) {
+        _memoryToneIndex = decoded;
+        if (mounted) {
+          setState(() => _selectedToneIndex = decoded);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _setSkinTone(int index) async {
+    _memoryToneIndex = index;
+    setState(() {
+      _selectedToneIndex = index;
+      _showToneBar = false;
+    });
+    try {
+      final file = await _toneFile();
+      await file.writeAsString(jsonEncode(index), flush: true);
+    } catch (_) {}
+  }
+
   Future<void> _recordEmojiUse(String emoji) async {
     final updated = [
       emoji,
       ..._recentEmojis.where((e) => e != emoji),
-    ].take(24).toList();
+    ].take(32).toList();
     _memoryRecents = updated;
     if (mounted) {
       setState(() => _recentEmojis = updated);
@@ -584,9 +363,65 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
         .trim();
   }
 
+  String _renderedEmoji(EmojiEntry entry) {
+    final modifier = UnicodeEmojiCatalog.skinTones[_selectedToneIndex].modifier;
+    return UnicodeEmojiCatalog.applySkinTone(
+      entry.emoji,
+      modifier,
+      supportsSkinTone: entry.supportsSkinTone,
+    );
+  }
+
   void _handleEmojiTap(String emoji) {
     widget.onSelected(emoji);
     unawaited(_recordEmojiUse(emoji));
+  }
+
+  Future<void> _showToneOptions(EmojiEntry entry) async {
+    if (!entry.supportsSkinTone) return;
+    HapticFeedback.mediumImpact();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black38,
+      builder: (dialogCtx) {
+        return Center(
+          child: Material(
+            color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurface,
+            elevation: 8,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: UnicodeEmojiCatalog.skinTones.map((tone) {
+                  final variant = UnicodeEmojiCatalog.applySkinTone(
+                    entry.emoji,
+                    tone.modifier,
+                    supportsSkinTone: true,
+                  );
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      Navigator.pop(dialogCtx);
+                      _handleEmojiTap(variant);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        variant,
+                        style: const TextStyle(fontSize: 28),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -597,47 +432,54 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
     final fieldBg =
         isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurfaceAlt;
     final accent = isDark ? AppColors.emeraldBright : AppColors.emeraldDark;
+    final currentTone = UnicodeEmojiCatalog.skinTones[_selectedToneIndex];
 
     final normalizedQuery = _normalize(_query);
 
-    final List<({String title, List<String> emojis})> visibleSections = [];
+    final List<({String title, List<EmojiEntry> entries})> visibleSections = [];
     if (normalizedQuery.isNotEmpty) {
       final seen = <String>{};
-      final matches = <String>[];
-      for (final category in widget.categories) {
+      final matches = <EmojiEntry>[];
+      for (final category in UnicodeEmojiCatalog.categories) {
         for (final entry in category.items) {
           if (seen.contains(entry.emoji)) continue;
           if (_normalize(entry.keywords).contains(normalizedQuery) ||
               _normalize(category.title).contains(normalizedQuery) ||
               entry.emoji.contains(normalizedQuery)) {
             seen.add(entry.emoji);
-            matches.add(entry.emoji);
+            matches.add(entry);
           }
         }
       }
       if (matches.isNotEmpty) {
-        visibleSections.add((title: 'Resultados', emojis: matches));
+        visibleSections.add((title: 'Resultados', entries: matches));
       }
     } else if (_selectedCategoryId == 'recentes') {
       if (_recentEmojis.isNotEmpty) {
-        visibleSections.add((title: 'Recentes', emojis: _recentEmojis));
+        visibleSections.add((
+          title: 'Recentes',
+          entries: _recentEmojis.map((e) => EmojiEntry(e, '')).toList(),
+        ));
       }
     } else if (_selectedCategoryId == 'all') {
       if (_recentEmojis.isNotEmpty) {
-        visibleSections.add((title: 'Recentes', emojis: _recentEmojis));
+        visibleSections.add((
+          title: 'Recentes',
+          entries: _recentEmojis.map((e) => EmojiEntry(e, '')).toList(),
+        ));
       }
-      for (final category in widget.categories) {
+      for (final category in UnicodeEmojiCatalog.categories) {
         visibleSections.add((
           title: category.title,
-          emojis: category.items.map((e) => e.emoji).toList(),
+          entries: category.items,
         ));
       }
     } else {
-      for (final category in widget.categories) {
+      for (final category in UnicodeEmojiCatalog.categories) {
         if (category.id == _selectedCategoryId) {
           visibleSections.add((
             title: category.title,
-            emojis: category.items.map((e) => e.emoji).toList(),
+            entries: category.items,
           ));
         }
       }
@@ -647,54 +489,155 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-          child: SizedBox(
-            height: 36,
-            child: TextField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _query = value),
-              style: const TextStyle(fontSize: 13.5),
-              decoration: InputDecoration(
-                hintText: 'Buscar emoji...',
-                hintStyle: TextStyle(fontSize: 13.5, color: secondaryText),
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  size: 18,
-                  color: secondaryText,
-                ),
-                prefixIconConstraints:
-                    const BoxConstraints(minWidth: 36, minHeight: 36),
-                suffixIcon: _query.isNotEmpty
-                    ? IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: secondaryText,
-                        ),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _query = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: fieldBg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(18),
-                  borderSide: BorderSide.none,
+          child: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value),
+                    style: const TextStyle(fontSize: 13.5),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar emoji...',
+                      hintStyle:
+                          TextStyle(fontSize: 13.5, color: secondaryText),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        size: 18,
+                        color: secondaryText,
+                      ),
+                      prefixIconConstraints:
+                          const BoxConstraints(minWidth: 36, minHeight: 36),
+                      suffixIcon: _query.isNotEmpty
+                          ? IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: Icon(
+                                Icons.close_rounded,
+                                size: 18,
+                                color: secondaryText,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _query = '');
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: fieldBg,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Tom de pele (${currentTone.label})',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => setState(() => _showToneBar = !_showToneBar),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: fieldBg,
+                      shape: BoxShape.circle,
+                      border: _showToneBar
+                          ? Border.all(color: AppColors.emerald, width: 1.6)
+                          : null,
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: currentTone.swatch,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: _showToneBar
+              ? Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: fieldBg,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Tom de pele',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: secondaryText,
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(
+                          UnicodeEmojiCatalog.skinTones.length,
+                          (i) {
+                            final tone = UnicodeEmojiCatalog.skinTones[i];
+                            final selected = i == _selectedToneIndex;
+                            return Tooltip(
+                              message: tone.label,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: () => _setSkinTone(i),
+                                child: Container(
+                                  width: 26,
+                                  height: 26,
+                                  margin: const EdgeInsets.only(left: 6),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: tone.swatch,
+                                    border: Border.all(
+                                      color: selected
+                                          ? AppColors.emerald
+                                          : Colors.black.withValues(alpha: 0.18),
+                                      width: selected ? 2.4 : 1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
         if (normalizedQuery.isEmpty)
           SizedBox(
@@ -719,7 +662,7 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
                   secondaryText: secondaryText,
                   onTap: () => setState(() => _selectedCategoryId = 'recentes'),
                 ),
-                ...widget.categories.map(
+                ...UnicodeEmojiCatalog.categories.map(
                   (category) => _CategoryIconButton(
                     icon: category.icon,
                     tooltip: category.title,
@@ -775,12 +718,16 @@ class _EmojiPickerViewState extends State<_EmojiPickerView> {
                             mainAxisSpacing: 4,
                             crossAxisSpacing: 4,
                           ),
-                          itemCount: section.emojis.length,
+                          itemCount: section.entries.length,
                           itemBuilder: (context, index) {
-                            final emoji = section.emojis[index];
+                            final entry = section.entries[index];
+                            final rendered = _renderedEmoji(entry);
                             return _AnimatedEmojiCell(
-                              emoji: emoji,
-                              onTap: () => _handleEmojiTap(emoji),
+                              emoji: rendered,
+                              onTap: () => _handleEmojiTap(rendered),
+                              onLongPress: entry.supportsSkinTone
+                                  ? () => _showToneOptions(entry)
+                                  : null,
                             );
                           },
                         ),
@@ -843,10 +790,12 @@ class _AnimatedEmojiCell extends StatefulWidget {
   const _AnimatedEmojiCell({
     required this.emoji,
     required this.onTap,
+    this.onLongPress,
   });
 
   final String emoji;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   State<_AnimatedEmojiCell> createState() => _AnimatedEmojiCellState();
@@ -864,6 +813,7 @@ class _AnimatedEmojiCellState extends State<_AnimatedEmojiCell> {
         widget.onTap();
       },
       onTapCancel: () => setState(() => _scale = 1.0),
+      onLongPress: widget.onLongPress,
       child: Center(
         child: AnimatedScale(
           scale: _scale,
@@ -885,12 +835,16 @@ class _StickerGrid extends StatelessWidget {
     required this.emptyText,
     required this.onTap,
     required this.onLongPress,
+    this.emptyActionLabel,
+    this.onCreatePressed,
   });
 
   final List<ZapiSticker> stickers;
   final String emptyText;
   final ValueChanged<ZapiSticker> onTap;
   final ValueChanged<ZapiSticker> onLongPress;
+  final String? emptyActionLabel;
+  final VoidCallback? onCreatePressed;
 
   @override
   Widget build(BuildContext context) {
@@ -902,10 +856,27 @@ class _StickerGrid extends StatelessWidget {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: Text(
-            emptyText,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: secondaryText, fontSize: 13.5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                emptyText,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: secondaryText, fontSize: 13.5),
+              ),
+              if (emptyActionLabel != null && onCreatePressed != null) ...[
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  onPressed: onCreatePressed,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 42),
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                  ),
+                  icon: const Icon(Icons.add_reaction_rounded, size: 18),
+                  label: Text(emptyActionLabel!),
+                ),
+              ],
+            ],
           ),
         ),
       );
@@ -931,7 +902,6 @@ class _StickerGrid extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.all(4),
                 child: ZapiStickerImage(
-                  assetPath: sticker.assetPath,
                   dataBase64: sticker.dataBase64,
                   mimeType: sticker.mimeType,
                   size: 72,

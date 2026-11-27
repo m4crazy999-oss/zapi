@@ -60,7 +60,7 @@ jobs:
             "${{ secrets.KEY_PASSWORD }}" \
             "${{ secrets.KEY_ALIAS }}" > android/key.properties
 
-      - name: Garantir wrapper Gradle e assets de branding/figurinhas
+      - name: Garantir wrapper Gradle e assets de branding
         run: |
           if [ ! -f android/gradlew ] || [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
             rm -rf /tmp/zapi_bootstrap
@@ -73,7 +73,6 @@ jobs:
           fi
           chmod +x android/gradlew
           python3 scripts/generate_branding_assets.py
-          python3 scripts/generate_stickers.py
 
       - name: Instalar dependências Dart/Flutter
         run: flutter pub get

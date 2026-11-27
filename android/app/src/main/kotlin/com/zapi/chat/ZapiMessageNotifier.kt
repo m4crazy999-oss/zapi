@@ -18,7 +18,10 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.QuerySnapshot
 
 object ZapiMessageNotifier {
-    const val CHANNEL_MESSAGES_ID = "zapi_messages_v2"
+    const val CHANNEL_MESSAGES_SV_ID = "zapi_messages_sv"
+    const val CHANNEL_MESSAGES_S_ID = "zapi_messages_s"
+    const val CHANNEL_MESSAGES_V_ID = "zapi_messages_v"
+    const val CHANNEL_MESSAGES_SILENT_ID = "zapi_messages_silent"
     const val CHANNEL_MESSAGES_NAME = "Mensagens"
     const val CHANNEL_MESSAGES_DESC = "Notificações de novas mensagens recebidas."
 
@@ -33,6 +36,8 @@ object ZapiMessageNotifier {
 
     private const val PREFS_NAME = "zapi_bg_prefs"
     private const val KEY_BG_ENABLED = "bg_enabled"
+    private const val KEY_NOTIF_SOUND = "notif_sound"
+    private const val KEY_NOTIF_VIBRATION = "notif_vibration"
     private const val KEY_LAST_NOTIFIED_PREFIX = "last_notified_"
 
     @Volatile
@@ -50,6 +55,32 @@ object ZapiMessageNotifier {
 
     fun setBackgroundEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_BG_ENABLED, enabled).apply()
+    }
+
+    fun isSoundEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(KEY_NOTIF_SOUND, true)
+    }
+
+    fun isVibrationEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(KEY_NOTIF_VIBRATION, true)
+    }
+
+    fun setSoundAndVibration(context: Context, sound: Boolean, vibration: Boolean) {
+        prefs(context).edit()
+            .putBoolean(KEY_NOTIF_SOUND, sound)
+            .putBoolean(KEY_NOTIF_VIBRATION, vibration)
+            .apply()
+    }
+
+    private fun selectedMessageChannelId(context: Context): String {
+        val sound = isSoundEnabled(context)
+        val vibration = isVibrationEnabled(context)
+        return when {
+            sound && vibration -> CHANNEL_MESSAGES_SV_ID
+            sound -> CHANNEL_MESSAGES_S_ID
+            vibration -> CHANNEL_MESSAGES_V_ID
+            else -> CHANNEL_MESSAGES_SILENT_ID
+        }
     }
 
     fun isAppForeground(context: Context): Boolean {
@@ -88,8 +119,8 @@ object ZapiMessageNotifier {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             ?: return
 
-        val msgChannel = NotificationChannel(
-            CHANNEL_MESSAGES_ID,
+        val svChannel = NotificationChannel(
+            CHANNEL_MESSAGES_SV_ID,
             CHANNEL_MESSAGES_NAME,
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
@@ -97,7 +128,42 @@ object ZapiMessageNotifier {
             enableVibration(true)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
-        manager.createNotificationChannel(msgChannel)
+        manager.createNotificationChannel(svChannel)
+
+        val soundOnlyChannel = NotificationChannel(
+            CHANNEL_MESSAGES_S_ID,
+            "Mensagens (somente som)",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = CHANNEL_MESSAGES_DESC
+            enableVibration(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
+        manager.createNotificationChannel(soundOnlyChannel)
+
+        val vibrateOnlyChannel = NotificationChannel(
+            CHANNEL_MESSAGES_V_ID,
+            "Mensagens (somente vibração)",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = CHANNEL_MESSAGES_DESC
+            setSound(null, null)
+            enableVibration(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
+        manager.createNotificationChannel(vibrateOnlyChannel)
+
+        val silentChannel = NotificationChannel(
+            CHANNEL_MESSAGES_SILENT_ID,
+            "Mensagens (silencioso)",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = CHANNEL_MESSAGES_DESC
+            setSound(null, null)
+            enableVibration(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
+        manager.createNotificationChannel(silentChannel)
 
         val bgChannel = NotificationChannel(
             CHANNEL_SERVICE_ID,
@@ -290,12 +356,19 @@ object ZapiMessageNotifier {
         )
 
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(context, CHANNEL_MESSAGES_ID)
+            Notification.Builder(context, selectedMessageChannelId(context))
         } else {
+            val sound = isSoundEnabled(context)
+            val vibration = isVibrationEnabled(context)
+            var defaults = Notification.DEFAULT_LIGHTS
+            if (sound) defaults = defaults or Notification.DEFAULT_SOUND
+            if (vibration) defaults = defaults or Notification.DEFAULT_VIBRATE
             @Suppress("DEPRECATION")
             Notification.Builder(context)
-                .setPriority(Notification.PRIORITY_HIGH)
-                .setDefaults(Notification.DEFAULT_ALL)
+                .setPriority(
+                    if (!sound && !vibration) Notification.PRIORITY_LOW else Notification.PRIORITY_HIGH
+                )
+                .setDefaults(defaults)
         }
 
         val notification = builder

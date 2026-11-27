@@ -66,11 +66,11 @@ service cloud.firestore {
     function isValidMessageMedia(data) {
       let mediaId = data.get('mediaId', null);
       let thumbB64 = data.get('thumbnailBase64', null);
-      let assetPath = data.get('assetPath', null);
-      return data.type in ['text', 'image', 'audio', 'sticker']
+      let fileName = data.get('fileName', null);
+      return data.type in ['text', 'image', 'audio', 'sticker', 'file', 'video']
         && (mediaId == null || (mediaId is string && mediaId.size() > 0 && mediaId.size() <= 128))
         && (thumbB64 == null || (thumbB64 is string && thumbB64.size() <= 32000))
-        && (assetPath == null || (assetPath is string && assetPath.matches('^asset://assets/stickers/.*\\.png$')))
+        && (fileName == null || (fileName is string && fileName.size() <= 180))
         && (!('width' in data) || data.width == null || (data.width is int && data.width > 0 && data.width <= 1600))
         && (!('height' in data) || data.height == null || (data.height is int && data.height > 0 && data.height <= 1600))
         && (!('durationMs' in data) || data.durationMs == null || (data.durationMs is int && data.durationMs >= 0 && data.durationMs <= 180000))
@@ -79,6 +79,8 @@ service cloud.firestore {
             (data.type == 'image' && data.sizeBytes <= 700 * 1024)
             || (data.type == 'audio' && data.sizeBytes <= 900 * 1024)
             || (data.type == 'sticker' && data.sizeBytes <= 100 * 1024)
+            || (data.type == 'file' && data.sizeBytes <= 680 * 1024)
+            || (data.type == 'video' && data.sizeBytes <= 700 * 1024)
             || (data.type == 'text' && data.sizeBytes == 0)
           )
         ));
@@ -88,14 +90,15 @@ service cloud.firestore {
     function isValidMediaDocument(chatId, mediaId, data) {
       return data.keys().hasOnly([
           'id', 'chatId', 'messageId', 'senderId', 'type', 'mimeType',
-          'data', 'sizeBytes', 'width', 'height', 'durationMs', 'createdAt'
+          'fileName', 'data', 'sizeBytes', 'width', 'height', 'durationMs', 'createdAt'
         ])
         && data.id == mediaId
         && data.chatId == chatId
         && data.messageId is string
         && data.senderId == request.auth.uid
-        && data.type in ['image', 'audio', 'sticker']
+        && data.type in ['image', 'audio', 'sticker', 'file', 'video']
         && data.mimeType is string
+        && (!('fileName' in data) || data.fileName == null || (data.fileName is string && data.fileName.size() <= 180))
         && data.data is string
         && data.data.size() > 0
         && data.data.size() <= 980000
@@ -105,6 +108,8 @@ service cloud.firestore {
           (data.type == 'image' && data.sizeBytes <= 700 * 1024)
           || (data.type == 'audio' && data.sizeBytes <= 900 * 1024)
           || (data.type == 'sticker' && data.sizeBytes <= 100 * 1024)
+          || (data.type == 'file' && data.sizeBytes <= 680 * 1024)
+          || (data.type == 'video' && data.sizeBytes <= 700 * 1024)
         );
     }
 
@@ -113,7 +118,8 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly([
           'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
-          'about', 'bannerPreset', 'bannerBase64', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
+          'about', 'bannerPreset', 'bannerBase64', 'createdAt', 'lastSeen', 'blockedUids',
+          'activeChatId', 'hideLastSeen', 'hideReadReceipts'
         ])
         && data.uid == uid
         && data.displayName is string
@@ -130,7 +136,9 @@ service cloud.firestore {
         && data.createdAt is timestamp
         && data.lastSeen is timestamp
         && (!('blockedUids' in data) || data.blockedUids is list)
-        && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string);
+        && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string)
+        && (!('hideLastSeen' in data) || data.hideLastSeen is bool)
+        && (!('hideReadReceipts' in data) || data.hideReadReceipts is bool);
     }
 
     // Alterado: proíbe email/allowEmailSearch após gravação, mantém publicId imutável após definido e permite migração de contas antigas pelo dono.
@@ -138,7 +146,8 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.keys().hasOnly([
           'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
-          'about', 'bannerPreset', 'bannerBase64', 'createdAt', 'lastSeen', 'blockedUids', 'activeChatId'
+          'about', 'bannerPreset', 'bannerBase64', 'createdAt', 'lastSeen', 'blockedUids',
+          'activeChatId', 'hideLastSeen', 'hideReadReceipts'
         ])
         && data.uid == resource.data.uid
         && data.createdAt == resource.data.createdAt
@@ -161,7 +170,9 @@ service cloud.firestore {
         && isValidProfileBannerBase64(data.get('bannerBase64', null))
         && data.lastSeen is timestamp
         && (!('blockedUids' in data) || data.blockedUids is list)
-        && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string);
+        && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string)
+        && (!('hideLastSeen' in data) || data.hideLastSeen is bool)
+        && (!('hideReadReceipts' in data) || data.hideReadReceipts is bool);
     }
 
     match /users/{uid} {
@@ -222,32 +233,21 @@ service cloud.firestore {
         // Permite gerenciar figurinhas próprias exclusivamente pelo dono.
         allow read, delete: if isOwner(uid);
 
-        // Figurinhas próprias em WebP 512x512 (< 100 KB) ou favoritas nativas.
+        // Apenas figurinhas personalizadas em WebP 512x512 (< 100 KB).
         allow create, update: if isOwner(uid)
           && request.resource.data.keys().hasOnly([
-            'id', 'data', 'assetPath', 'mimeType', 'sizeBytes',
-            'isFavorite', 'isBuiltIn', 'createdAt', 'lastUsedAt'
+            'id', 'data', 'mimeType', 'sizeBytes',
+            'isFavorite', 'createdAt', 'lastUsedAt'
           ])
           && request.resource.data.id == stickerId
           && request.resource.data.isFavorite is bool
-          && request.resource.data.isBuiltIn is bool
-          && (
-            (
-              request.resource.data.isBuiltIn == true
-              && request.resource.data.get('assetPath', null) is string
-              && request.resource.data.assetPath.matches('^asset://assets/stickers/.*\\.png$')
-            )
-            ||
-            (
-              request.resource.data.isBuiltIn == false
-              && request.resource.data.get('data', null) is string
-              && request.resource.data.data.size() > 0
-              && request.resource.data.data.size() <= 145000
-              && request.resource.data.get('mimeType', '') == 'image/webp'
-              && request.resource.data.get('sizeBytes', 0) is int
-              && request.resource.data.sizeBytes <= 100 * 1024
-            )
-          );
+          && request.resource.data.get('data', null) is string
+          && request.resource.data.data.size() > 0
+          && request.resource.data.data.size() <= 145000
+          && request.resource.data.get('mimeType', '') == 'image/webp'
+          && request.resource.data.get('sizeBytes', 0) is int
+          && request.resource.data.sizeBytes > 0
+          && request.resource.data.sizeBytes <= 100 * 1024;
       }
     }
 
@@ -338,6 +338,24 @@ service cloud.firestore {
           && resource.data.senderId == request.auth.uid;
       }
 
+      // Valida atualização segura do mapa de reações (cada usuário só altera a própria chave).
+      function isValidReactionMapUpdate(prevData, nextData) {
+        let prevReactions = prevData.get('reactions', {});
+        let nextReactions = nextData.get('reactions', {});
+        return nextReactions is map
+          && nextReactions.size() <= 10
+          && nextReactions.diff(prevReactions).affectedKeys().hasOnly([request.auth.uid])
+          && (
+            !(request.auth.uid in nextReactions)
+            || (
+              prevData.get('deletedForEveryone', false) == false
+              && nextReactions[request.auth.uid] is string
+              && nextReactions[request.auth.uid].size() >= 1
+              && nextReactions[request.auth.uid].size() <= 16
+            )
+          );
+      }
+
       match /messages/{messageId} {
         // Permite ler mensagens exclusivamente aos participantes da conversa pai.
         allow read: if isChatParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data);
@@ -350,6 +368,8 @@ service cloud.firestore {
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 4000
           && isValidMessageMedia(request.resource.data)
+          && (!('isForwarded' in request.resource.data) || request.resource.data.isForwarded is bool)
+          && (!('reactions' in request.resource.data) || (request.resource.data.reactions is map && request.resource.data.reactions.size() == 0))
           && request.resource.data.status == 'sent'
           && request.resource.data.deletedForEveryone == false
           && !getAfter(/databases/$(database)/documents/chats/$(chatId)).data
@@ -357,15 +377,18 @@ service cloud.firestore {
               .get(otherParticipant(getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participants), false)
           && !isBlockedByOther(otherParticipant(getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participants));
 
-        // Permite recibos (entregue/lida/áudio ouvido) ou ocultar para si; apagar para todos é exclusivo do remetente.
+        // Permite recibos (entregue/lida/áudio ouvido), reações próprias ou ocultar para si; apagar para todos é exclusivo do remetente.
         allow update: if isChatParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data)
           && request.resource.data.senderId == resource.data.senderId
           && request.resource.data.chatId == resource.data.chatId
           && request.resource.data.clientCreatedAt == resource.data.clientCreatedAt
           && (
             (
-              // Recibos (entregue/lida/áudio ouvido) ou ocultação local (apagar para mim).
+              // Recibos (entregue/lida/áudio ouvido), reação própria ou ocultação local (apagar para mim).
               request.resource.data.text == resource.data.text
+              && request.resource.data.get('type', '') == resource.data.get('type', '')
+              && request.resource.data.get('mediaId', null) == resource.data.get('mediaId', null)
+              && request.resource.data.get('isForwarded', false) == resource.data.get('isForwarded', false)
               && request.resource.data.deletedForEveryone == resource.data.deletedForEveryone
               && (request.resource.data.deletedFor.hasAll(resource.data.deletedFor))
               && (
@@ -377,6 +400,7 @@ service cloud.firestore {
                 request.resource.data.get('playedBy', []).size() == resource.data.get('playedBy', []).size()
                 || request.auth.uid in request.resource.data.get('playedBy', [])
               )
+              && isValidReactionMapUpdate(resource.data, request.resource.data)
             )
             ||
             (
@@ -389,6 +413,7 @@ service cloud.firestore {
               && request.resource.data.get('assetPath', null) == null
               && request.resource.data.get('mediaUrl', null) == null
               && request.resource.data.get('thumbnailUrl', null) == null
+              && request.resource.data.get('reactions', {}).size() == 0
             )
           );
 
@@ -408,23 +433,38 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.keys().hasOnly([
           'id', 'ownerUid', 'ownerName', 'ownerUsername', 'ownerPhotoBase64',
-          'type', 'text', 'backgroundColor', 'imageBase64', 'privacyMode',
-          'allowedUids', 'createdAt', 'expiresAt'
+          'type', 'text', 'backgroundColor', 'backgroundGradientEnd',
+          'textColor', 'fontStyle', 'textAlign', 'fontSize',
+          'imageBase64', 'videoBase64', 'durationMs',
+          'privacyMode', 'allowedUids', 'createdAt', 'expiresAt'
         ])
         && request.resource.data.id == statusId
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerName is string
         && request.resource.data.ownerUsername is string
         && isValidProfilePhotoBase64(request.resource.data.get('ownerPhotoBase64', null))
-        && request.resource.data.type in ['text', 'image']
+        && request.resource.data.type in ['text', 'image', 'video']
         && request.resource.data.text is string
         && request.resource.data.text.size() <= 500
         && request.resource.data.backgroundColor is int
+        && (!('backgroundGradientEnd' in request.resource.data) || request.resource.data.backgroundGradientEnd == null || request.resource.data.backgroundGradientEnd is int)
+        && (!('textColor' in request.resource.data) || request.resource.data.textColor == null || request.resource.data.textColor is int)
+        && (!('fontStyle' in request.resource.data) || request.resource.data.fontStyle == null || (request.resource.data.fontStyle is string && request.resource.data.fontStyle.size() <= 24))
+        && (!('textAlign' in request.resource.data) || request.resource.data.textAlign == null || (request.resource.data.textAlign is string && request.resource.data.textAlign.size() <= 16))
+        && (!('fontSize' in request.resource.data) || request.resource.data.fontSize == null || (request.resource.data.fontSize is number && request.resource.data.fontSize >= 12 && request.resource.data.fontSize <= 48))
+        && (!('durationMs' in request.resource.data) || request.resource.data.durationMs == null || (request.resource.data.durationMs is int && request.resource.data.durationMs >= 0 && request.resource.data.durationMs <= 60000))
         && (
           request.resource.data.get('imageBase64', null) == null
           || (
             request.resource.data.imageBase64 is string
             && request.resource.data.imageBase64.size() <= 620000
+          )
+        )
+        && (
+          request.resource.data.get('videoBase64', null) == null
+          || (
+            request.resource.data.videoBase64 is string
+            && request.resource.data.videoBase64.size() <= 960000
           )
         )
         && request.resource.data.privacyMode in ['all', 'favorites', 'custom']

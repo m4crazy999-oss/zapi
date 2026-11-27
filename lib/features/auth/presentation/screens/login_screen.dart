@@ -6,7 +6,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/validators.dart';
-import '../../../../core/widgets/zapi_logo.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../providers/auth_providers.dart';
 
@@ -48,22 +48,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } on AppException catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = e.message);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
     } catch (_) {
       if (!mounted) return;
       const msg = 'Não foi possível entrar agora. Tente novamente.';
       setState(() => _errorMessage = msg);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(msg),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
@@ -89,8 +77,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Center(child: ZapiLogo(size: 80, showLabel: true)),
-                    const SizedBox(height: 8),
+                    const Center(
+                      child: ZapiMascot(
+                        mood: ZapiMascotMood.happy,
+                        size: 98,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      AppConstants.appName,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.6,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
                     Text(
                       AppConstants.appTagline,
                       textAlign: TextAlign.center,

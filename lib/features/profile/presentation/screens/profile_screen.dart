@@ -9,7 +9,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/image_helper.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../core/utils/zapi_toast.dart';
 import '../../../../core/widgets/profile_banner.dart';
+import '../../../../core/widgets/profile_header_actions.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../../../auth/domain/app_user.dart';
@@ -65,28 +67,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           .read(profileControllerProvider.notifier)
           .syncAccountAndGenerateId();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Perfil e ID exclusivo sincronizados!')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
       setState(() => _idSyncError = e.message);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
       const msg = 'Não foi possível gerar o ID agora. Tente novamente.';
       setState(() => _idSyncError = msg);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(msg),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, msg);
     } finally {
       if (mounted) {
         setState(() => _isSyncingId = false);
@@ -147,24 +136,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           .read(profileControllerProvider.notifier)
           .uploadPhoto(compressedBytes);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto de perfil atualizada!')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível atualizar a foto de perfil.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      ZapiToast.showError(
+        context,
+        'Não foi possível atualizar a foto de perfil.',
       );
     } finally {
       if (mounted) {
@@ -178,17 +157,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() => _isUploadingPhoto = true);
       await ref.read(profileControllerProvider.notifier).removePhoto();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto de perfil removida.')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) {
         setState(() => _isUploadingPhoto = false);
@@ -209,24 +180,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           .read(profileControllerProvider.notifier)
           .uploadBanner(compressedBytes);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Banner do perfil atualizado!')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível atualizar o banner agora.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      ZapiToast.showError(
+        context,
+        'Não foi possível atualizar o banner agora.',
       );
     } finally {
       if (mounted) {
@@ -240,17 +201,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() => _isUploadingBanner = true);
       await ref.read(profileControllerProvider.notifier).removeBanner();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Banner removido.')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) {
         setState(() => _isUploadingBanner = false);
@@ -353,10 +306,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _copyIdentifier(String value, String label) async {
     await Clipboard.setData(ClipboardData(text: value));
     await HapticFeedback.lightImpact();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label $value copiado!')),
-    );
   }
 
   Future<void> _shareIdentifiers(AppUser user) async {
@@ -382,24 +331,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           );
       if (!mounted) return;
       setState(() => _usernameAvailable = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Perfil atualizado com sucesso!')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível salvar seu perfil agora.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      ZapiToast.showError(
+        context,
+        'Não foi possível salvar seu perfil agora.',
       );
     }
   }
@@ -431,7 +370,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 8),
           child: Center(
-            child: _HeaderIconPill(
+            child: ProfileHeaderIconPill(
               icon: Icons.arrow_back_rounded,
               onDarkBackdrop: hasCustomBanner || isDark,
               onPressed: () => Navigator.of(context).maybePop(),
@@ -443,7 +382,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Center(
-                child: _HeaderActionPill(
+                child: ProfileHeaderActionPill(
                   icon: Icons.wallpaper_rounded,
                   label: _isUploadingBanner ? 'Enviando...' : 'Alterar banner',
                   onDarkBackdrop: hasCustomBanner || isDark,
@@ -864,89 +803,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _HeaderIconPill extends StatelessWidget {
-  const _HeaderIconPill({
-    required this.icon,
-    required this.onDarkBackdrop,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final bool onDarkBackdrop;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = onDarkBackdrop
-        ? Colors.black.withValues(alpha: 0.34)
-        : Colors.white.withValues(alpha: 0.78);
-    final fg = onDarkBackdrop ? Colors.white : AppColors.lightTextPrimary;
-
-    return Material(
-      color: bg,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onPressed,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Icon(icon, color: fg, size: 21),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeaderActionPill extends StatelessWidget {
-  const _HeaderActionPill({
-    required this.icon,
-    required this.label,
-    required this.onDarkBackdrop,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool onDarkBackdrop;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = onDarkBackdrop
-        ? Colors.black.withValues(alpha: 0.38)
-        : Colors.white.withValues(alpha: 0.84);
-    final fg = onDarkBackdrop ? Colors.white : AppColors.lightTextPrimary;
-
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 17, color: fg),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

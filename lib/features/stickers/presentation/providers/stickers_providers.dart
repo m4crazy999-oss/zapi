@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/media_cache_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/stickers_repository.dart';
@@ -55,24 +54,7 @@ final recentStickerIdsProvider =
   RecentStickerIdsController.new,
 );
 
-/// Combina figurinhas nativas do app + figurinhas salvas/favoritadas pelo usuário.
+/// Retorna exclusivamente as figurinhas criadas ou salvas pelo usuário.
 final allAvailableStickersProvider = Provider<List<ZapiSticker>>((ref) {
-  final userSaved = ref.watch(userStickersProvider).value ?? const [];
-  final savedById = {for (final s in userSaved) s.id: s};
-
-  final builtIns = AppConstants.builtInStickers.map((b) {
-    final override = savedById[b.id];
-    return ZapiSticker(
-      id: b.id,
-      assetPath: b.assetPath,
-      mimeType: 'image/png',
-      isFavorite: override?.isFavorite ?? false,
-      isBuiltIn: true,
-      createdAt: override?.createdAt,
-      lastUsedAt: override?.lastUsedAt,
-    );
-  }).toList();
-
-  final customOnly = userSaved.where((s) => !s.isBuiltIn).toList();
-  return [...customOnly, ...builtIns];
+  return ref.watch(userStickersProvider).value ?? const [];
 });

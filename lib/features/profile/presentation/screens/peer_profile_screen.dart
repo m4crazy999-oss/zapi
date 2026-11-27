@@ -10,7 +10,9 @@ import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/utils/zapi_toast.dart';
 import '../../../../core/widgets/profile_banner.dart';
+import '../../../../core/widgets/profile_header_actions.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
@@ -48,10 +50,6 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
   Future<void> _copyText(String value, String label) async {
     await Clipboard.setData(ClipboardData(text: value));
     await HapticFeedback.lightImpact();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label copiado!')),
-    );
   }
 
   void _openFullPhoto({
@@ -125,19 +123,9 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
           .read(contactsControllerProvider.notifier)
           .addContact(targetUser: targetUser);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${targetUser.displayName} adicionado aos contatos!'),
-        ),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) setState(() => _isUpdatingContact = false);
     }
@@ -179,17 +167,9 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
             nickname: updated,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Apelido atualizado!')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) setState(() => _isUpdatingContact = false);
     }
@@ -205,60 +185,49 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
           );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) setState(() => _isUpdatingContact = false);
     }
   }
 
-  Future<void> _removeContact(AppContact contact) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Remover contato'),
-        content: Text(
-          'Remover ${contact.effectiveName} da sua lista? A conversa continua disponível.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Remover'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+  Future<void> _restoreRemovedContact(
+    AppContact contact,
+    AppUser targetUser,
+  ) async {
+    if (_myUid.isEmpty) return;
+    try {
+      await ref.read(contactsRepositoryProvider).addOrUpdateContact(
+            ownerUid: _myUid,
+            targetUser: targetUser,
+            nickname: contact.nickname,
+            isFavorite: contact.isFavorite,
+          );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message);
+    }
+  }
 
+  Future<void> _removeContact(
+    AppContact contact,
+    AppUser targetUser,
+  ) async {
+    if (_isUpdatingContact) return;
     setState(() => _isUpdatingContact = true);
     try {
       await ref
           .read(contactsControllerProvider.notifier)
           .removeContact(contact.contactUid);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${contact.effectiveName} removido.')),
+      ZapiToast.showUndo(
+        context,
+        message: '${contact.effectiveName} removido dos contatos',
+        onUndo: () => _restoreRemovedContact(contact, targetUser),
       );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) setState(() => _isUpdatingContact = false);
     }
@@ -307,24 +276,9 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
             chatId: widget.chatId,
             blocked: !currentlyBlocked,
           );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            currentlyBlocked
-                ? '$peerName foi desbloqueado.'
-                : '$peerName foi bloqueado.',
-          ),
-        ),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) setState(() => _isUpdatingBlock = false);
     }
@@ -372,9 +326,15 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
         (myUser?.blockedUids.contains(peerUid) ?? false) ||
             (thread?.isBlockedBy(_myUid) ?? false);
 
-    final statusLabel = presence.online
-        ? 'online agora'
-        : DateFormatter.formatLastSeen(presence.lastSeen ?? peerUser?.lastSeen);
+    final hideLastSeen = (myUser?.hideLastSeen ?? false) ||
+        (peerUser?.hideLastSeen ?? false);
+    final statusLabel = hideLastSeen
+        ? null
+        : (presence.online
+            ? 'online agora'
+            : DateFormatter.formatLastSeen(
+                presence.lastSeen ?? peerUser?.lastSeen,
+              ));
 
     final targetForContact = peerUser ??
         AppUser(
@@ -400,26 +360,10 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 8),
           child: Center(
-            child: Material(
-              color: onDarkBackdrop
-                  ? Colors.black.withValues(alpha: 0.34)
-                  : Colors.white.withValues(alpha: 0.78),
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => Navigator.of(context).maybePop(),
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Icon(
-                    Icons.arrow_back_rounded,
-                    color: onDarkBackdrop
-                        ? Colors.white
-                        : AppColors.lightTextPrimary,
-                    size: 21,
-                  ),
-                ),
-              ),
+            child: ProfileHeaderIconPill(
+              icon: Icons.arrow_back_rounded,
+              onDarkBackdrop: onDarkBackdrop,
+              onPressed: () => Navigator.of(context).maybePop(),
             ),
           ),
         ),
@@ -483,20 +427,22 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 4),
-                Text(
-                  statusLabel,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight:
-                        presence.online ? FontWeight.w600 : FontWeight.w400,
-                    color: presence.online
-                        ? (isDark
-                            ? AppColors.emeraldBright
-                            : AppColors.emeraldDark)
-                        : secondaryText,
+                if (statusLabel != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    statusLabel,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight:
+                          presence.online ? FontWeight.w600 : FontWeight.w400,
+                      color: presence.online
+                          ? (isDark
+                              ? AppColors.emeraldBright
+                              : AppColors.emeraldDark)
+                          : secondaryText,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -639,7 +585,7 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
                       enabled: !_isUpdatingContact,
                       leading: const Icon(Icons.person_remove_rounded),
                       title: const Text('Remover dos contatos'),
-                      onTap: () => _removeContact(savedContact),
+                      onTap: () => _removeContact(savedContact, targetForContact),
                     ),
                   ],
                   const Divider(height: 1),

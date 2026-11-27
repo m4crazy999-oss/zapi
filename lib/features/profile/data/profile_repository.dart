@@ -195,4 +195,27 @@ class ProfileRepository {
       throw FirebaseErrorMapper.map(error);
     }
   }
+
+  Future<void> updatePrivacy({
+    required String uid,
+    bool? hideLastSeen,
+    bool? hideReadReceipts,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (hideLastSeen != null) {
+      updates['hideLastSeen'] = hideLastSeen;
+    }
+    if (hideReadReceipts != null) {
+      updates['hideReadReceipts'] = hideReadReceipts;
+    }
+    if (updates.isEmpty) return;
+    try {
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(uid)
+          .update(updates);
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
 }

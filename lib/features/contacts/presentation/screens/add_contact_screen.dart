@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/chat_id_helper.dart';
+import '../../../../core/utils/zapi_toast.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../../../auth/domain/app_user.dart';
@@ -72,21 +73,9 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
             nickname: _nicknameController.text,
           );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${targetUser.displayName} adicionado aos contatos!',
-          ),
-        ),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) {
         setState(() => _saving = false);

@@ -57,22 +57,10 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     } on AppException catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = e.message);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
     } catch (_) {
       if (!mounted) return;
       const msg = 'Não foi possível enviar o e-mail de recuperação agora.';
       setState(() => _errorMessage = msg);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(msg),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
     } finally {
       if (mounted) {
         setState(() => _submitting = false);

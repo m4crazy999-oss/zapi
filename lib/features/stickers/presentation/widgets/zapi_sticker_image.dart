@@ -10,7 +10,6 @@ import '../../../../core/services/media_cache_service.dart';
 class ZapiStickerImage extends ConsumerStatefulWidget {
   const ZapiStickerImage({
     super.key,
-    this.assetPath,
     this.dataBase64,
     this.chatId,
     this.mediaId,
@@ -18,7 +17,6 @@ class ZapiStickerImage extends ConsumerStatefulWidget {
     this.size = 136,
   });
 
-  final String? assetPath;
   final String? dataBase64;
   final String? chatId;
   final String? mediaId;
@@ -53,7 +51,6 @@ class _ZapiStickerImageState extends ConsumerState<ZapiStickerImage> {
   }
 
   Future<void> _loadMediaIfNeeded() async {
-    if (widget.assetPath != null && widget.assetPath!.isNotEmpty) return;
     if (widget.dataBase64 != null && widget.dataBase64!.isNotEmpty) return;
     if (widget.chatId == null ||
         widget.chatId!.isEmpty ||
@@ -101,17 +98,6 @@ class _ZapiStickerImageState extends ConsumerState<ZapiStickerImage> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.assetPath != null && widget.assetPath!.startsWith('asset://')) {
-      final path = widget.assetPath!.replaceFirst('asset://', '');
-      return Image.asset(
-        path,
-        width: widget.size,
-        height: widget.size,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _StickerFallback(size: widget.size),
-      );
-    }
-
     final inlineBytes = _decodeInline();
     if (inlineBytes != null) {
       return Image.memory(

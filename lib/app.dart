@@ -6,13 +6,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/router/app_router.dart';
+import 'core/services/app_lock_service.dart';
 import 'core/services/app_update_service.dart';
+import 'core/services/chat_preferences_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/presence_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
+import 'core/widgets/app_lock_overlay.dart';
 import 'core/widgets/update_dialog.dart';
+import 'features/auth/domain/app_user.dart';
 import 'features/auth/presentation/providers/auth_providers.dart';
+import 'features/profile/presentation/providers/profile_providers.dart';
 
 class ZapiApp extends ConsumerStatefulWidget {
   const ZapiApp({super.key});
@@ -25,6 +30,7 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
   String? _activeSessionUid;
   AppReleaseUpdate? _mandatoryUpdate;
   bool _isCheckingUpdate = false;
+  bool _initialLockEvaluated = false;
 
   @override
   void initState() {
@@ -36,6 +42,7 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
         ref.read(authStateProvider),
         ref.read(authRedirectHoldProvider),
       );
+      _evaluateInitialLock(ref.read(chatPreferencesProvider));
       unawaited(_checkForUpdates());
     });
   }
@@ -44,6 +51,15 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _evaluateInitialLock(ChatPreferencesState prefs) {
+    if (_initialLockEvaluated || !prefs.isLoaded) return;
+    _initialLockEvaluated = true;
+    final user = ref.read(authStateProvider).value;
+    if (user != null && prefs.hasAppLockConfigured) {
+      ref.read(appLockControllerProvider.notifier).lock();
+    }
   }
 
   @override
@@ -55,9 +71,19 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
       notifications.setAppForeground(true);
       unawaited(_checkForUpdates());
     } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
+      presence.setAppForeground(false);
+      notifications.setAppForeground(false);
+      final prefs = ref.read(chatPreferencesProvider);
+      final user = ref.read(authStateProvider).value;
+      if (state != AppLifecycleState.detached &&
+          user != null &&
+          prefs.hasAppLockConfigured &&
+          !AppLockBridge.isPromptActive) {
+        ref.read(appLockControllerProvider.notifier).lock();
+      }
+    } else if (state == AppLifecycleState.inactive) {
       presence.setAppForeground(false);
       notifications.setAppForeground(false);
     }
@@ -73,6 +99,7 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
       unawaited(_initializeUserSession(user.uid));
     } else if (!next.isLoading) {
       _activeSessionUid = null;
+      ref.read(appLockControllerProvider.notifier).unlock();
       ref.read(presenceServiceProvider).unbind();
       unawaited(ref.read(notificationServiceProvider).clearSession());
     }
@@ -80,6 +107,12 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
 
   Future<void> _initializeUserSession(String uid) async {
     await ref.read(authRepositoryProvider).migrateAccountPrivacyIfNeeded();
+    if (!mounted || _activeSessionUid != uid) return;
+
+    final profile = ref.read(currentUserProfileProvider).value;
+    await ref
+        .read(presenceServiceProvider)
+        .setHideLastSeen(profile?.hideLastSeen ?? false);
     if (!mounted || _activeSessionUid != uid) return;
 
     ref.read(presenceServiceProvider).bindUser(uid);
@@ -109,6 +142,9 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     final router = ref.watch(appRouterProvider);
+    final isAppLocked = ref.watch(appLockControllerProvider);
+    final prefs = ref.watch(chatPreferencesProvider);
+    final hasSession = ref.watch(authStateProvider).value != null;
 
     ref.listen<AsyncValue<User?>>(
       authStateProvider,
@@ -127,6 +163,28 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
       },
     );
 
+    ref.listen<ChatPreferencesState>(
+      chatPreferencesProvider,
+      (_, next) => _evaluateInitialLock(next),
+    );
+
+    ref.listen<AsyncValue<AppUser?>>(
+      currentUserProfileProvider,
+      (_, next) {
+        final user = next.value;
+        if (user != null) {
+          unawaited(
+            ref
+                .read(presenceServiceProvider)
+                .setHideLastSeen(user.hideLastSeen),
+          );
+        }
+      },
+    );
+
+    final showLock =
+        isAppLocked && hasSession && prefs.hasAppLockConfigured;
+
     return MaterialApp.router(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
@@ -139,6 +197,10 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
         return Stack(
           children: [
             child ?? const SizedBox.shrink(),
+            if (showLock)
+              const Positioned.fill(
+                child: AppLockOverlay(),
+              ),
             if (pendingUpdate != null)
               Positioned.fill(
                 child: Navigator(

@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'zapi_toast.dart';
+
 class PermissionHelper {
   PermissionHelper._();
 
@@ -34,11 +36,50 @@ class PermissionHelper {
     );
   }
 
-  static Future<bool> requestGallery(BuildContext context) async {
+  static Future<bool> requestCameraForMedia(
+    BuildContext context, {
+    required bool includeMicrophone,
+  }) async {
+    final cameraOk = await _requestWithRationale(
+      context: context,
+      permission: Permission.camera,
+      title: 'Acesso à câmera',
+      rationale:
+          'O Zapi precisa da câmera apenas quando você abre a câmera do aplicativo para tirar fotos ou gravar vídeos.',
+      deniedMessage:
+          'Permissão de câmera negada. Libere a câmera quando quiser usar este recurso.',
+      permanentlyDeniedMessage:
+          'A permissão da câmera foi bloqueada nas configurações do aparelho. Ative-a para abrir a câmera no Zapi.',
+    );
+    if (!cameraOk || !context.mounted) return false;
+    if (!includeMicrophone) return true;
+
+    final micStatus = await Permission.microphone.status;
+    if (micStatus.isGranted) return true;
+
+    final proceed = await _showRationaleDialog(
+      context: context,
+      title: 'Acesso ao microfone',
+      message:
+          'Para gravar vídeos com som pela câmera, permita o acesso ao microfone.',
+      confirmLabel: 'Permitir',
+    );
+    if (!proceed || !context.mounted) return true;
+    await Permission.microphone.request();
+    return true;
+  }
+
+  static Future<bool> requestGallery(
+    BuildContext context, {
+    bool includeVideo = false,
+  }) async {
     if (!Platform.isAndroid) return true;
 
     final photosStatus = await Permission.photos.status;
-    if (photosStatus.isGranted || photosStatus.isLimited) {
+    final videosStatus =
+        includeVideo ? await Permission.videos.status : PermissionStatus.granted;
+    if ((photosStatus.isGranted || photosStatus.isLimited) &&
+        (!includeVideo || videosStatus.isGranted || videosStatus.isLimited)) {
       return true;
     }
 
@@ -51,15 +92,25 @@ class PermissionHelper {
 
     final shouldAsk = await _showRationaleDialog(
       context: context,
-      title: 'Acesso às fotos',
-      message:
-          'O Zapi precisa acessar suas fotos apenas para você escolher imagens da galeria, criar figurinhas ou salvar fotos recebidas.',
+      title: includeVideo ? 'Acesso às fotos e vídeos' : 'Acesso às fotos',
+      message: includeVideo
+          ? 'O Zapi precisa acessar suas fotos e vídeos para mostrar sua mídia recente na câmera e no Status.'
+          : 'O Zapi precisa acessar suas fotos apenas para você escolher imagens da galeria, criar figurinhas ou salvar fotos recebidas.',
       confirmLabel: 'Continuar',
     );
     if (!shouldAsk) return false;
 
     var result = await Permission.photos.request();
-    if (result.isGranted || result.isLimited) {
+    if (includeVideo) {
+      final videoResult = await Permission.videos.request();
+      if ((result.isGranted || result.isLimited) &&
+          (videoResult.isGranted || videoResult.isLimited)) {
+        return true;
+      }
+      if (videoResult.isPermanentlyDenied) {
+        result = videoResult;
+      }
+    } else if (result.isGranted || result.isLimited) {
       return true;
     }
 
@@ -79,14 +130,14 @@ class PermissionHelper {
         context: context,
         title: 'Permissão necessária',
         message:
-            'O acesso à galeria foi bloqueado. Abra as configurações do aplicativo no Android e permita o acesso a fotos e mídia.',
+            'O acesso às fotos e vídeos foi bloqueado. Abra as configurações do aplicativo no aparelho para liberar.',
       );
       return false;
     }
 
     _showSnack(
       context,
-      'Permissão da galeria negada. Você pode liberar quando quiser.',
+      'Permissão negada. Você pode liberar quando quiser para ver suas fotos e vídeos.',
     );
     return false;
   }
@@ -203,8 +254,6 @@ class PermissionHelper {
   }
 
   static void _showSnack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ZapiToast.showError(context, message);
   }
 }

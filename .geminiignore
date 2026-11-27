@@ -1,0 +1,5 @@
+../segredos/
+.env
+*.jks
+key.properties
+google-services.json

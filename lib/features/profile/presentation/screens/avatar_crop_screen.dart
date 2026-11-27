@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/zapi_toast.dart';
 
 class AvatarCropScreen extends StatefulWidget {
   const AvatarCropScreen({
@@ -157,10 +158,9 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
     } catch (_) {
       if (mounted) {
         setState(() => _isConfirming = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Não foi possível confirmar o recorte. Tente novamente.'),
-          ),
+        ZapiToast.showError(
+          context,
+          'Não foi possível confirmar o recorte. Tente novamente.',
         );
       }
     }
@@ -169,9 +169,9 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B141A),
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0B141A),
+        backgroundColor: AppColors.darkBackground,
         foregroundColor: Colors.white,
         elevation: 0,
         title: Text(widget.title),
@@ -241,9 +241,9 @@ class _AvatarCropScreenState extends State<AvatarCropScreen> {
             child: Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               decoration: const BoxDecoration(
-                color: Color(0xFF121E25),
+                color: AppColors.darkSurface,
                 border: Border(
-                  top: BorderSide(color: Color(0xFF233642)),
+                  top: BorderSide(color: AppColors.darkBorder),
                 ),
               ),
               child: Row(

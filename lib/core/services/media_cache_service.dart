@@ -28,18 +28,37 @@ class MediaCacheService {
     return dir;
   }
 
-  String _extensionForMime(String? mimeType) {
+  String _extensionForMime(String? mimeType, {String? fileName}) {
+    if (fileName != null && fileName.trim().isNotEmpty) {
+      final rawExt = p.extension(fileName.trim()).replaceFirst('.', '');
+      if (RegExp(r'^[a-zA-Z0-9]{1,8}$').hasMatch(rawExt)) {
+        return rawExt.toLowerCase();
+      }
+    }
     switch (mimeType) {
+      case 'video/mp4':
+        return 'mp4';
       case 'audio/mp4':
       case 'audio/aac':
         return 'm4a';
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/ogg':
+        return 'ogg';
+      case 'application/pdf':
+        return 'pdf';
+      case 'text/plain':
+        return 'txt';
+      case 'application/zip':
+        return 'zip';
       case 'image/webp':
         return 'webp';
       case 'image/png':
         return 'png';
       case 'image/jpeg':
-      default:
         return 'jpg';
+      default:
+        return 'bin';
     }
   }
 
@@ -49,13 +68,14 @@ class MediaCacheService {
     required String chatId,
     required String mediaId,
     String? mimeType,
+    String? fileName,
   }) async {
     final root = await _rootDir();
     final chatDir = Directory(p.join(root.path, 'chats', _safeKey(chatId)));
     if (!await chatDir.exists()) {
       await chatDir.create(recursive: true);
     }
-    final ext = _extensionForMime(mimeType);
+    final ext = _extensionForMime(mimeType, fileName: fileName);
     return File(p.join(chatDir.path, '${_safeKey(mediaId)}.$ext'));
   }
 
@@ -65,9 +85,10 @@ class MediaCacheService {
     required String chatId,
     required String mediaId,
     String? mimeType,
+    String? fileName,
   }) {
     if (chatId.isEmpty || mediaId.isEmpty) return Future.value(null);
-    final key = '$chatId::$mediaId::${mimeType ?? ''}';
+    final key = '$chatId::$mediaId::${mimeType ?? ''}::${fileName ?? ''}';
     final pending = _inFlight[key];
     if (pending != null) return pending;
 
@@ -75,6 +96,7 @@ class MediaCacheService {
       chatId: chatId,
       mediaId: mediaId,
       mimeType: mimeType,
+      fileName: fileName,
     ).whenComplete(() {
       _inFlight.remove(key);
     });
@@ -86,11 +108,13 @@ class MediaCacheService {
     required String chatId,
     required String mediaId,
     String? mimeType,
+    String? fileName,
   }) async {
     final target = await _chatMediaTargetFile(
       chatId: chatId,
       mediaId: mediaId,
       mimeType: mimeType,
+      fileName: fileName,
     );
     if (await target.exists() && await target.length() > 0) {
       return target;
@@ -109,10 +133,12 @@ class MediaCacheService {
     if (b64 == null || b64.isEmpty) return null;
 
     final resolvedMime = (dataMap?['mimeType'] as String?) ?? mimeType;
+    final resolvedName = (dataMap?['fileName'] as String?) ?? fileName;
     final resolvedTarget = await _chatMediaTargetFile(
       chatId: chatId,
       mediaId: mediaId,
       mimeType: resolvedMime,
+      fileName: resolvedName,
     );
 
     final bytes = base64Decode(b64);
@@ -130,11 +156,13 @@ class MediaCacheService {
     required String mediaId,
     required String mimeType,
     required Uint8List bytes,
+    String? fileName,
   }) async {
     final target = await _chatMediaTargetFile(
       chatId: chatId,
       mediaId: mediaId,
       mimeType: mimeType,
+      fileName: fileName,
     );
     await _writeAtomically(target, bytes);
     return target;

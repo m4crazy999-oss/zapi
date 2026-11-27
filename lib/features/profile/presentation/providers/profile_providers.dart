@@ -146,6 +146,24 @@ class ProfileController extends AsyncNotifier<void> {
       throw FirebaseErrorMapper.map(error);
     }
   }
+
+  Future<void> updatePrivacy({
+    bool? hideLastSeen,
+    bool? hideReadReceipts,
+  }) async {
+    final user = ref.read(firebaseAuthProvider).currentUser;
+    if (user == null) return;
+
+    try {
+      await ref.read(profileRepositoryProvider).updatePrivacy(
+            uid: user.uid,
+            hideLastSeen: hideLastSeen,
+            hideReadReceipts: hideReadReceipts,
+          );
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
 }
 
 final profileControllerProvider =

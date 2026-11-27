@@ -1,24 +1,37 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/audio_playback_service.dart';
+import '../../../../core/services/chat_preferences_service.dart';
+import '../../../../core/services/media_cache_service.dart';
+import '../../../../core/services/native_media_bridge.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_exceptions.dart';
+import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/utils/date_formatter.dart';
-import '../../../../core/utils/permission_helper.dart';
+import '../../../../core/utils/zapi_toast.dart';
+import '../../../../core/widgets/chat_wallpaper.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
+import '../../../../core/widgets/zapi_camera_screen.dart';
+import '../../../../core/widgets/zapi_photo_editor_screen.dart';
+import '../../../../core/widgets/zapi_video_trimmer_screen.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../contacts/presentation/providers/contacts_providers.dart';
 import '../../../profile/presentation/providers/profile_providers.dart';
+import '../../../stickers/domain/zapi_sticker.dart';
 import '../../../stickers/presentation/providers/stickers_providers.dart';
 import '../../../stickers/presentation/widgets/sticker_tray.dart';
 import '../../data/chats_repository.dart';
@@ -26,12 +39,11 @@ import '../../data/media_upload_manager.dart';
 import '../../domain/chat_message.dart';
 import '../../domain/chat_thread.dart';
 import '../providers/chats_providers.dart';
-import '../widgets/attachment_sheet.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/reply_preview_bar.dart';
 import '../widgets/voice_recorder_bar.dart';
 import 'fullscreen_image_viewer.dart';
-import 'image_preview_screen.dart';
+import 'fullscreen_video_viewer.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({
@@ -49,10 +61,19 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen>
     with WidgetsBindingObserver {
+  static const List<String> _quickReactions = [
+    '👍',
+    '❤️',
+    '😂',
+    '😮',
+    '😢',
+    '🙏',
+  ];
+
   final _textController = TextEditingController();
+  final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
-  final _imagePicker = ImagePicker();
 
   int _messageLimit = AppConstants.messagesPageSize;
   bool _isLoadingMore = false;
@@ -63,13 +84,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _isCurrentlyTyping = false;
   bool _hasTextInput = false;
   bool _showStickerTray = false;
+  bool _isSearching = false;
+  bool _draftLoaded = false;
+  String _searchQuery = '';
+  int _searchMatchIndex = 0;
   int _lastVisibleCount = 0;
   String? _lastMarkedReadMsgId;
 
   Timer? _typingTimer;
+  Timer? _draftTimer;
   ReplyQuote? _replyingTo;
+  final Set<String> _pendingHideMessageIds = {};
+  final Map<String, Timer> _pendingHideTimers = {};
+  final Map<String, GlobalKey> _messageKeys = {};
   late final NotificationService _notificationService;
   late final ChatsRepository _chatsRepository;
+  late final ChatPreferencesNotifier _prefsNotifier;
   late final AudioPlaybackController _audioController;
   late final VoiceRecorderController _voiceController;
 
@@ -89,9 +119,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     WidgetsBinding.instance.addObserver(this);
     _notificationService = ref.read(notificationServiceProvider);
     _chatsRepository = ref.read(chatsRepositoryProvider);
+    _prefsNotifier = ref.read(chatPreferencesProvider.notifier);
     _audioController = ref.read(audioPlaybackProvider.notifier);
     _notificationService.setActiveChatId(widget.chatId);
     _scrollController.addListener(_onScroll);
+
+    _applyInitialDraft(ref.read(chatPreferencesProvider));
 
     _replyingTo = widget.initialReply;
     _voiceController = VoiceRecorderController(
@@ -100,19 +133,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       },
       onFeedbackMessage: (msg) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
-        );
+        ZapiToast.showError(context, msg, bottomOffset: 80);
       },
       onBeforeRecordStart: () => _audioController.deactivateForRecording(),
       onCompleted: _handleRecordedVoice,
     );
   }
 
+  void _applyInitialDraft(ChatPreferencesState prefs) {
+    if (_draftLoaded || !prefs.isLoaded) return;
+    _draftLoaded = true;
+    final savedDraft = prefs.draftFor(widget.chatId);
+    if (savedDraft.isNotEmpty && _textController.text.isEmpty) {
+      _textController.text = savedDraft;
+      _textController.selection =
+          TextSelection.collapsed(offset: savedDraft.length);
+      _hasTextInput = true;
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _typingTimer?.cancel();
+    _draftTimer?.cancel();
+    unawaited(_prefsNotifier.setChatDraft(widget.chatId, _textController.text));
+    for (final entry in _pendingHideTimers.entries) {
+      entry.value.cancel();
+      if (_myUid.isNotEmpty) {
+        unawaited(
+          _chatsRepository.deleteMessageForMe(
+            chatId: widget.chatId,
+            messageId: entry.key,
+            uid: _myUid,
+          ),
+        );
+      }
+    }
+    _pendingHideTimers.clear();
     if (_isCurrentlyTyping && _myUid.isNotEmpty) {
       _chatsRepository.setTyping(
         chatId: widget.chatId,
@@ -126,8 +184,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _textController.dispose();
+    _searchController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _hideMessageOptimistically(String messageId) {
+    if (_myUid.isEmpty) return;
+    _pendingHideTimers[messageId]?.cancel();
+    setState(() {
+      _pendingHideMessageIds.add(messageId);
+    });
+
+    final timer = Timer(const Duration(seconds: 3), () async {
+      _pendingHideTimers.remove(messageId);
+      try {
+        await _chatsRepository.deleteMessageForMe(
+          chatId: widget.chatId,
+          messageId: messageId,
+          uid: _myUid,
+        );
+      } on AppException catch (e) {
+        if (!mounted) return;
+        setState(() => _pendingHideMessageIds.remove(messageId));
+        ZapiToast.showError(context, e.message, bottomOffset: 80);
+      }
+    });
+    _pendingHideTimers[messageId] = timer;
+
+    ZapiToast.showUndo(
+      context,
+      message: 'Mensagem apagada para você',
+      bottomOffset: 80,
+      onUndo: () {
+        _pendingHideTimers.remove(messageId)?.cancel();
+        if (mounted) {
+          setState(() => _pendingHideMessageIds.remove(messageId));
+        }
+      },
+    );
   }
 
   @override
@@ -172,6 +267,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (hasText != _hasTextInput) {
       setState(() => _hasTextInput = hasText);
     }
+
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 350), () {
+      unawaited(_prefsNotifier.setChatDraft(widget.chatId, value));
+    });
 
     if (!hasText) {
       _stopTypingNow();
@@ -264,7 +364,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     final effectivePeer = _resolveEffectivePeer(peerUser, thread);
     final quote = _replyingTo;
+    _draftTimer?.cancel();
     _textController.clear();
+    unawaited(_prefsNotifier.setChatDraft(widget.chatId, ''));
     _stopTypingNow();
     setState(() {
       _hasTextInput = false;
@@ -286,13 +388,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     } on AppException catch (e) {
       if (!mounted) return;
       _textController.text = text;
+      unawaited(_prefsNotifier.setChatDraft(widget.chatId, text));
       setState(() => _hasTextInput = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message, bottomOffset: 80);
     } finally {
       if (mounted) {
         setState(() => _isSending = false);
@@ -300,7 +398,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
-  Future<void> _openAttachmentMenu({
+  Future<void> _openCameraAndMedia({
     required AppUser? currentUser,
     required AppUser? peerUser,
     required ChatThread? thread,
@@ -308,110 +406,133 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final effectiveSender = _resolveCurrentUser(currentUser);
     if (effectiveSender == null) return;
     _focusNode.unfocus();
-    final action = await AttachmentSheet.show(context);
-    if (action == null || !mounted) return;
 
-    switch (action) {
-      case AttachmentAction.camera:
-        await _pickCameraPhoto(
-          currentUser: effectiveSender,
-          peerUser: peerUser,
-          thread: thread,
-        );
-      case AttachmentAction.gallery:
-        await _pickGalleryPhotos(
-          currentUser: effectiveSender,
-          peerUser: peerUser,
-          thread: thread,
-        );
-    }
-  }
-
-  Future<void> _pickCameraPhoto({
-    required AppUser? currentUser,
-    required AppUser? peerUser,
-    required ChatThread? thread,
-  }) async {
-    if (currentUser == null) return;
-    final granted = await PermissionHelper.requestCamera(context);
-    if (!granted || !mounted) return;
-
-    try {
-      final shot = await _imagePicker.pickImage(source: ImageSource.camera);
-      if (shot == null || !mounted) return;
-      await _openPreviewAndEnqueue(
-        paths: [shot.path],
-        currentUser: currentUser,
-        peerUser: peerUser,
-        thread: thread,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível abrir a câmera.')),
-      );
-    }
-  }
-
-  Future<void> _pickGalleryPhotos({
-    required AppUser? currentUser,
-    required AppUser? peerUser,
-    required ChatThread? thread,
-  }) async {
-    if (currentUser == null) return;
-    final granted = await PermissionHelper.requestGallery(context);
-    if (!granted || !mounted) return;
-
-    try {
-      final selected = await _imagePicker.pickMultiImage(limit: 10);
-      if (selected.isEmpty || !mounted) return;
-      await _openPreviewAndEnqueue(
-        paths: selected.map((x) => x.path).toList(),
-        currentUser: currentUser,
-        peerUser: peerUser,
-        thread: thread,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível abrir a galeria.')),
-      );
-    }
-  }
-
-  Future<void> _openPreviewAndEnqueue({
-    required List<String> paths,
-    required AppUser currentUser,
-    required AppUser? peerUser,
-    required ChatThread? thread,
-  }) async {
-    final effectivePeer = _resolveEffectivePeer(peerUser, thread);
-    final result = await Navigator.push<
-        List<({String sourcePath, String caption})>>(
+    final captured = await Navigator.push<ZapiCapturedMedia>(
       context,
       MaterialPageRoute(
-        builder: (_) => ImagePreviewScreen(
-          initialPaths: paths,
-          recipientName: effectivePeer.displayName,
+        builder: (_) => const ZapiCameraScreen(
+          allowVideo: true,
+          maxPhotos: 10,
         ),
       ),
     );
-    if (result == null || result.isEmpty || !mounted) return;
+    if (captured == null || captured.paths.isEmpty || !mounted) return;
 
-    final quote = _replyingTo;
-    setState(() {
-      _replyingTo = null;
-      _showStickerTray = false;
-    });
+    final effectivePeer = _resolveEffectivePeer(peerUser, thread);
 
-    await ref.read(mediaUploadManagerProvider.notifier).enqueuePhotos(
-          chatId: widget.chatId,
-          sender: currentUser,
-          recipient: effectivePeer,
-          photos: result,
-          replyTo: quote,
-        );
-    _scrollToBottom();
+    if (captured.kind == ZapiCapturedMediaKind.photos) {
+      final edited = await Navigator.push<
+          List<({String sourcePath, String caption})>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ZapiPhotoEditorScreen(
+            initialPaths: captured.paths,
+            recipientName: effectivePeer.displayName,
+          ),
+        ),
+      );
+      if (edited == null || edited.isEmpty || !mounted) return;
+
+      final quote = _replyingTo;
+      setState(() {
+        _replyingTo = null;
+        _showStickerTray = false;
+      });
+
+      await ref.read(mediaUploadManagerProvider.notifier).enqueuePhotos(
+            chatId: widget.chatId,
+            sender: effectiveSender,
+            recipient: effectivePeer,
+            photos: edited,
+            replyTo: quote,
+          );
+      _scrollToBottom();
+      return;
+    }
+
+    if (captured.kind == ZapiCapturedMediaKind.video) {
+      final trimmed = await Navigator.push<TrimmedVideoOutput>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ZapiVideoTrimmerScreen(
+            videoPath: captured.paths.first,
+            maxBytes: AppConstants.maxChatVideoBytes,
+            maxDurationMs: 60000,
+            primaryButtonLabel: 'Enviar vídeo',
+          ),
+        ),
+      );
+      if (trimmed == null || !mounted) return;
+
+      final quote = _replyingTo;
+      setState(() {
+        _replyingTo = null;
+        _showStickerTray = false;
+      });
+
+      try {
+        await ref.read(mediaUploadManagerProvider.notifier).enqueueVideo(
+              chatId: widget.chatId,
+              sender: effectiveSender,
+              recipient: effectivePeer,
+              filePath: trimmed.path,
+              durationMs: trimmed.durationMs,
+              sizeBytes: trimmed.sizeBytes,
+              caption: trimmed.caption,
+              replyTo: quote,
+            );
+        _scrollToBottom();
+      } on AppException catch (e) {
+        if (!mounted) return;
+        ZapiToast.showError(context, e.message, bottomOffset: 80);
+      }
+    }
+  }
+
+  Future<void> _pickAndSendFile({
+    required AppUser? currentUser,
+    required AppUser? peerUser,
+    required ChatThread? thread,
+  }) async {
+    final effectiveSender = _resolveCurrentUser(currentUser);
+    if (effectiveSender == null) return;
+    _focusNode.unfocus();
+
+    try {
+      final picked = await NativeMediaBridge.pickDocument(
+        maxBytes: AppConstants.maxChatFileBytes,
+      );
+      if (picked == null || !mounted) return;
+
+      final effectivePeer = _resolveEffectivePeer(peerUser, thread);
+      final quote = _replyingTo;
+      setState(() {
+        _replyingTo = null;
+        _showStickerTray = false;
+      });
+
+      await ref.read(mediaUploadManagerProvider.notifier).enqueueFile(
+            chatId: widget.chatId,
+            sender: effectiveSender,
+            recipient: effectivePeer,
+            filePath: picked.path,
+            fileName: picked.fileName,
+            mimeType: picked.mimeType,
+            sizeBytes: picked.sizeBytes,
+            replyTo: quote,
+          );
+      _scrollToBottom();
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message, bottomOffset: 80);
+    } catch (_) {
+      if (!mounted) return;
+      ZapiToast.showError(
+        context,
+        'Não foi possível enviar este arquivo.',
+        bottomOffset: 80,
+      );
+    }
   }
 
   Future<void> _handleRecordedVoice(String filePath, int durationMs) async {
@@ -439,12 +560,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _scrollToBottom();
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message, bottomOffset: 80);
     }
   }
 
@@ -483,6 +599,397 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ),
       ),
     );
+  }
+
+  void _openVideoViewer(ChatMessage message, String senderLabel) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FullscreenVideoViewer(
+          senderName: message.senderId == _myUid ? 'Você' : senderLabel,
+          timeLabel:
+              '${DateFormatter.formatDaySeparator(message.effectiveTime)} às ${DateFormatter.formatTime(message.effectiveTime)}',
+          chatId: message.chatId,
+          mediaId: message.mediaId,
+          mimeType: message.mimeType,
+          localFilePath: message.localMediaPath,
+          caption: message.text,
+        ),
+      ),
+    );
+  }
+
+  Future<File?> _resolveMessageFile(ChatMessage message) async {
+    if (message.localMediaPath != null &&
+        File(message.localMediaPath!).existsSync()) {
+      return File(message.localMediaPath!);
+    }
+    if (message.chatId.isEmpty ||
+        message.mediaId == null ||
+        message.mediaId!.isEmpty) {
+      return null;
+    }
+    return ref.read(mediaCacheServiceProvider).getOrFetchChatMedia(
+          chatId: message.chatId,
+          mediaId: message.mediaId!,
+          mimeType: message.mimeType,
+          fileName: message.fileName,
+        );
+  }
+
+  Future<void> _toggleReaction(ChatMessage message, String emoji) async {
+    if (_myUid.isEmpty ||
+        message.isUploading ||
+        message.uploadFailed ||
+        message.deletedForEveryone) {
+      return;
+    }
+    unawaited(HapticFeedback.selectionClick());
+    try {
+      await _chatsRepository.toggleReaction(
+        chatId: widget.chatId,
+        messageId: message.id,
+        uid: _myUid,
+        emoji: emoji,
+        currentReaction: message.reactionFor(_myUid),
+      );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message, bottomOffset: 80);
+    }
+  }
+
+  Future<void> _openForwardSheet(ChatMessage sourceMessage) async {
+    final sender = _resolveCurrentUser(ref.read(currentUserProfileProvider).value);
+    if (sender == null || _myUid.isEmpty) return;
+
+    final target = await showModalBottomSheet<
+        ({
+          String uid,
+          String displayName,
+          String username,
+          String about,
+          String? photoBase64,
+          String? photoUrl,
+          bool chatExists,
+        })>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        var filter = '';
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Consumer(
+              builder: (context, sheetRef, _) {
+                final chats = sheetRef.watch(userChatsProvider).value ?? const [];
+                final contacts =
+                    sheetRef.watch(contactsListProvider).value ?? const [];
+                final contactsByUid = sheetRef.watch(contactsByUidProvider);
+                final isDark =
+                    Theme.of(context).brightness == Brightness.dark;
+                final secondaryText = isDark
+                    ? AppColors.darkTextSecondary
+                    : AppColors.lightTextSecondary;
+
+                final items = <({
+                  String uid,
+                  String displayName,
+                  String username,
+                  String about,
+                  String? photoBase64,
+                  String? photoUrl,
+                  bool chatExists,
+                })>[];
+                final seenUids = <String>{};
+
+                for (final chat in chats) {
+                  final peerUid = chat.otherParticipantUid(_myUid);
+                  if (peerUid.isEmpty || !seenUids.add(peerUid)) continue;
+                  final saved = contactsByUid[peerUid];
+                  final profile = chat.profileFor(peerUid);
+                  items.add((
+                    uid: peerUid,
+                    displayName: saved?.effectiveName ??
+                        profile?.displayName ??
+                        'Contato Zapi',
+                    username: saved?.username ?? profile?.username ?? '',
+                    about: saved?.about ?? profile?.about ?? '',
+                    photoBase64: saved?.photoBase64 ?? profile?.photoBase64,
+                    photoUrl: saved?.photoUrl ?? profile?.photoUrl,
+                    chatExists: true,
+                  ));
+                }
+
+                for (final contact in contacts) {
+                  if (!seenUids.add(contact.contactUid)) continue;
+                  items.add((
+                    uid: contact.contactUid,
+                    displayName: contact.effectiveName,
+                    username: contact.username,
+                    about: contact.about,
+                    photoBase64: contact.photoBase64,
+                    photoUrl: contact.photoUrl,
+                    chatExists: false,
+                  ));
+                }
+
+                final q = filter.trim().toLowerCase();
+                final filtered = q.isEmpty
+                    ? items
+                    : items
+                        .where(
+                          (item) =>
+                              item.displayName.toLowerCase().contains(q) ||
+                              item.username.toLowerCase().contains(q),
+                        )
+                        .toList();
+
+                return SafeArea(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+                          child: Text(
+                            'Encaminhar para...',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                          child: TextField(
+                            onChanged: (val) =>
+                                setSheetState(() => filter = val),
+                            decoration: const InputDecoration(
+                              hintText: 'Buscar conversa ou contato...',
+                              prefixIcon: Icon(Icons.search_rounded),
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Flexible(
+                          child: filtered.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    'Nenhum contato disponível.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: secondaryText),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: filtered.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(indent: 72, height: 1),
+                                  itemBuilder: (context, index) {
+                                    final item = filtered[index];
+                                    return ListTile(
+                                      leading: ZapiAvatar(
+                                        displayName: item.displayName,
+                                        photoBase64: item.photoBase64,
+                                        photoUrl: item.photoUrl,
+                                        radius: 21,
+                                      ),
+                                      title: Text(
+                                        item.displayName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      subtitle: item.username.isNotEmpty
+                                          ? Text(
+                                              '@${item.username}',
+                                              style: TextStyle(
+                                                color: secondaryText,
+                                                fontSize: 12.5,
+                                              ),
+                                            )
+                                          : null,
+                                      onTap: () =>
+                                          Navigator.pop(sheetCtx, item),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+
+    if (target == null || !mounted) return;
+
+    final targetChatId = ChatIdHelper.buildDirectChatId(_myUid, target.uid);
+    final recipient = AppUser(
+      uid: target.uid,
+      displayName: target.displayName,
+      username: target.username,
+      about: target.about,
+      photoBase64: target.photoBase64,
+      photoUrl: target.photoUrl,
+    );
+
+    try {
+      if (sourceMessage.isText) {
+        await _chatsRepository.sendTextMessage(
+          chatId: targetChatId,
+          sender: sender,
+          recipient: recipient,
+          text: sourceMessage.text,
+          chatExists: target.chatExists,
+          isForwarded: true,
+        );
+      } else {
+        final file = await _resolveMessageFile(sourceMessage);
+        if (!mounted) return;
+        if (file == null || !await file.exists()) {
+          throw const AppException('Mídia indisponível para encaminhar.');
+        }
+
+        final uploadMgr = ref.read(mediaUploadManagerProvider.notifier);
+        if (sourceMessage.isImage) {
+          await uploadMgr.enqueuePhotos(
+            chatId: targetChatId,
+            sender: sender,
+            recipient: recipient,
+            photos: [(sourcePath: file.path, caption: sourceMessage.text)],
+            isForwarded: true,
+          );
+        } else if (sourceMessage.isVideo) {
+          await uploadMgr.enqueueVideo(
+            chatId: targetChatId,
+            sender: sender,
+            recipient: recipient,
+            filePath: file.path,
+            durationMs: sourceMessage.durationMs ?? 0,
+            sizeBytes: await file.length(),
+            caption: sourceMessage.text,
+            isForwarded: true,
+          );
+        } else if (sourceMessage.isAudio) {
+          await uploadMgr.enqueueAudio(
+            chatId: targetChatId,
+            sender: sender,
+            recipient: recipient,
+            filePath: file.path,
+            durationMs: sourceMessage.durationMs ?? 0,
+            isForwarded: true,
+          );
+        } else if (sourceMessage.isFile) {
+          await uploadMgr.enqueueFile(
+            chatId: targetChatId,
+            sender: sender,
+            recipient: recipient,
+            filePath: file.path,
+            fileName: sourceMessage.fileName ?? 'arquivo',
+            mimeType: sourceMessage.mimeType ?? 'application/octet-stream',
+            sizeBytes: await file.length(),
+            isForwarded: true,
+          );
+        } else if (sourceMessage.isSticker) {
+          final bytes = await file.readAsBytes();
+          await uploadMgr.sendSticker(
+            chatId: targetChatId,
+            sender: sender,
+            recipient: recipient,
+            sticker: ZapiSticker(
+              id: sourceMessage.mediaId ?? '',
+              dataBase64: base64Encode(bytes),
+              mimeType: sourceMessage.mimeType ?? 'image/webp',
+              sizeBytes: bytes.length,
+              isFavorite: false,
+            ),
+            chatExists: target.chatExists,
+            isForwarded: true,
+          );
+        }
+      }
+
+      if (!mounted) return;
+      if (targetChatId != widget.chatId) {
+        context.pushReplacement('/chats/$targetChatId');
+      } else {
+        _scrollToBottom();
+      }
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message, bottomOffset: 80);
+    } catch (_) {
+      if (!mounted) return;
+      ZapiToast.showError(
+        context,
+        'Não foi possível encaminhar esta mensagem.',
+        bottomOffset: 80,
+      );
+    }
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      _searchMatchIndex = 0;
+      if (!_isSearching) {
+        _searchController.clear();
+        _searchQuery = '';
+      }
+    });
+  }
+
+  void _jumpToMatch({
+    required List<ChatMessage> matches,
+    required List<ChatMessage> allMessages,
+    required int nextMatchIndex,
+  }) {
+    if (matches.isEmpty) return;
+    final clamped = nextMatchIndex.clamp(0, matches.length - 1);
+    setState(() => _searchMatchIndex = clamped);
+
+    final targetMsg = matches[clamped];
+    final key = _messageKeys[targetMsg.id];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        alignment: 0.4,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+
+    final idx = allMessages.indexWhere((m) => m.id == targetMsg.id);
+    if (idx >= 0 && _scrollController.hasClients) {
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      final estimatedOffset = (idx * 78.0).clamp(0.0, maxExtent);
+      _scrollController.jumpTo(estimatedOffset);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _messageKeys[targetMsg.id]?.currentContext;
+        if (mounted && ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.4,
+            duration: const Duration(milliseconds: 180),
+          );
+        }
+      });
+    }
   }
 
   void _showMessageActions({
@@ -541,11 +1048,54 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       context: context,
       showDragHandle: true,
       builder: (sheetContext) {
+        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final myReaction = message.reactionFor(_myUid);
+
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (!message.deletedForEveryone) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: _quickReactions.map((emoji) {
+                      final selected = myReaction == emoji;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          unawaited(_toggleReaction(message, emoji));
+                        },
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: selected
+                                ? AppColors.emerald.withValues(alpha: 0.2)
+                                : (isDark
+                                    ? AppColors.darkSurfaceAlt
+                                    : AppColors.lightSurfaceAlt),
+                            border: selected
+                                ? Border.all(
+                                    color: AppColors.emerald,
+                                    width: 1.4,
+                                  )
+                                : null,
+                          ),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 22),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.reply_rounded),
                   title: const Text('Responder'),
@@ -562,9 +1112,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     _focusNode.requestFocus();
                   },
                 ),
+                ListTile(
+                  leading: const Icon(Icons.forward_rounded),
+                  title: const Text('Encaminhar'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    unawaited(_openForwardSheet(message));
+                  },
+                ),
                 if (message.isSticker &&
-                    ((message.assetPath?.isNotEmpty ?? false) ||
-                        (message.mediaId?.isNotEmpty ?? false)))
+                    (message.mediaId?.isNotEmpty ?? false))
                   ListTile(
                     leading: const Icon(Icons.star_rounded),
                     title: const Text('Adicionar às minhas figurinhas'),
@@ -575,30 +1132,72 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                             .read(stickersRepositoryProvider)
                             .saveReceivedSticker(
                               uid: _myUid,
-                              assetPath: message.assetPath,
                               chatId: message.chatId,
                               mediaId: message.mediaId,
                               mimeType: message.mimeType,
                             );
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content:
-                                Text('Figurinha salva em suas figurinhas!'),
-                          ),
-                        );
                       } on AppException catch (e) {
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(e.message),
-                            backgroundColor:
-                                Theme.of(context).colorScheme.error,
-                          ),
+                        ZapiToast.showError(
+                          context,
+                          e.message,
+                          bottomOffset: 80,
                         );
                       }
                     },
                   ),
+                if (message.isFile) ...[
+                  ListTile(
+                    leading: const Icon(Icons.open_in_new_rounded),
+                    title: const Text('Abrir arquivo'),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final file = await _resolveMessageFile(message);
+                      if (!mounted) return;
+                      if (file == null || !await file.exists()) {
+                        ZapiToast.showError(
+                          context,
+                          'Arquivo indisponível.',
+                          bottomOffset: 80,
+                        );
+                        return;
+                      }
+                      final res = await OpenFilex.open(
+                        file.path,
+                        type: message.mimeType,
+                      );
+                      if (!mounted) return;
+                      if (res.type != ResultType.done) {
+                        ZapiToast.showError(
+                          context,
+                          'Nenhum aplicativo encontrado para abrir este arquivo.',
+                          bottomOffset: 80,
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.save_alt_rounded),
+                    title: const Text('Salvar ou compartilhar arquivo'),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final file = await _resolveMessageFile(message);
+                      if (!mounted) return;
+                      if (file == null || !await file.exists()) {
+                        ZapiToast.showError(
+                          context,
+                          'Arquivo indisponível.',
+                          bottomOffset: 80,
+                        );
+                        return;
+                      }
+                      await Share.shareXFiles(
+                        [XFile(file.path)],
+                        text: message.fileName ?? 'Arquivo',
+                      );
+                    },
+                  ),
+                ],
                 if (message.text.trim().isNotEmpty)
                   ListTile(
                     leading: const Icon(Icons.copy_rounded),
@@ -608,33 +1207,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       await Clipboard.setData(
                         ClipboardData(text: message.text),
                       );
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Texto copiado.')),
-                      );
+                      unawaited(HapticFeedback.selectionClick());
                     },
                   ),
               ],
               ListTile(
                 leading: const Icon(Icons.delete_rounded),
                 title: const Text('Apagar para mim'),
-                onTap: () async {
+                onTap: () {
                   Navigator.pop(sheetContext);
-                  try {
-                    await ref.read(chatsRepositoryProvider).deleteMessageForMe(
-                          chatId: widget.chatId,
-                          messageId: message.id,
-                          uid: _myUid,
-                        );
-                  } on AppException catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(e.message),
-                        backgroundColor: Theme.of(context).colorScheme.error,
-                      ),
-                    );
-                  }
+                  _hideMessageOptimistically(message.id);
                 },
               ),
               if (isMine && !message.deletedForEveryone)
@@ -663,12 +1245,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           );
                     } on AppException catch (e) {
                       if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(e.message),
-                          backgroundColor: Theme.of(context).colorScheme.error,
-                        ),
-                      );
+                      ZapiToast.showError(context, e.message, bottomOffset: 80);
                     }
                   },
                 ),
@@ -684,8 +1261,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     List<ChatMessage> firestoreMessages,
     List<PendingMediaItem> pendingItems,
   ) {
-    final visibleFirestore =
-        firestoreMessages.where((m) => !m.isHiddenFor(_myUid)).toList();
+    final visibleFirestore = firestoreMessages
+        .where(
+          (m) => !m.isHiddenFor(_myUid) && !_pendingHideMessageIds.contains(m.id),
+        )
+        .toList();
     final existingIds = {for (final m in visibleFirestore) m.id};
 
     final activePending = pendingItems
@@ -731,13 +1311,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         thread?.profileFor(peerUid)?.photoUrl;
 
     final isPeerTyping = thread?.isTyping(peerUid) ?? false;
+    final hideLastSeen = (currentUser?.hideLastSeen ?? false) ||
+        (peerUser?.hideLastSeen ?? false);
+    final hideReadReceipts = currentUser?.hideReadReceipts ?? false;
     final statusLabel = isPeerTyping
         ? 'digitando...'
-        : (presence.online
-            ? 'online'
-            : DateFormatter.formatLastSeen(
-                presence.lastSeen ?? peerUser?.lastSeen,
-              ));
+        : hideLastSeen
+            ? null
+            : (presence.online
+                ? 'online'
+                : DateFormatter.formatLastSeen(
+                    presence.lastSeen ?? peerUser?.lastSeen,
+                  ));
 
     final isBlockedByPeer =
         (peerUser?.blockedUids.contains(_myUid) ?? false) ||
@@ -745,6 +1330,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final isBlockedByMe =
         (currentUser?.blockedUids.contains(peerUid) ?? false) ||
             (thread?.isBlockedBy(_myUid) ?? false);
+
+    ref.listen<ChatPreferencesState>(
+      chatPreferencesProvider,
+      (_, next) => _applyInitialDraft(next),
+    );
 
     ref.listen<AsyncValue<List<ChatMessage>>>(
       chatMessagesProvider((chatId: widget.chatId, limit: _messageLimit)),
@@ -763,8 +1353,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           });
         }
 
-        final visible =
-            rawMessages.where((m) => !m.isHiddenFor(_myUid)).toList();
+        final visible = rawMessages
+            .where(
+              (m) =>
+                  !m.isHiddenFor(_myUid) &&
+                  !_pendingHideMessageIds.contains(m.id),
+            )
+            .toList();
 
         if (visible.length > _lastVisibleCount && _lastVisibleCount > 0) {
           final newest = visible.first;
@@ -784,7 +1379,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             .where((m) => m.senderId != _myUid && !m.hasPendingWrites)
             .firstOrNull;
         final readToken =
-            '${latestIncoming?.id ?? ''}_${thread?.unreadFor(_myUid) ?? 0}';
+            '${latestIncoming?.id ?? ''}_${thread?.unreadFor(_myUid) ?? 0}_$hideReadReceipts';
         if (_myUid.isNotEmpty && _lastMarkedReadMsgId != readToken) {
           _lastMarkedReadMsgId = readToken;
           ref.read(chatsRepositoryProvider).markChatAsRead(
@@ -792,80 +1387,207 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 currentUid: _myUid,
                 messages: rawMessages,
                 thread: thread,
+                sendReadReceipt: !hideReadReceipts,
               );
         }
       },
     );
 
     final cachedMessages = messagesAsync.value;
+    final mergedMessages = _mergeMessages(
+      cachedMessages ?? const [],
+      pendingUploads,
+    );
+    final trimmedSearch = _searchQuery.trim().toLowerCase();
+    final searchMatches = _isSearching && trimmedSearch.isNotEmpty
+        ? mergedMessages
+            .where(
+              (m) =>
+                  !m.deletedForEveryone &&
+                  m.text.toLowerCase().contains(trimmedSearch),
+            )
+            .toList()
+        : const <ChatMessage>[];
+    final safeMatchIdx = searchMatches.isEmpty
+        ? 0
+        : _searchMatchIndex.clamp(0, searchMatches.length - 1);
 
     return PopScope(
-      canPop: !_showStickerTray,
+      canPop: !_showStickerTray && !_isSearching,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _showStickerTray) {
+        if (didPop) return;
+        if (_isSearching) {
+          _toggleSearch();
+        } else if (_showStickerTray) {
           setState(() => _showStickerTray = false);
         }
       },
       child: Scaffold(
         appBar: AppBar(
-          titleSpacing: 0,
-          title: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => context.push('/chats/${widget.chatId}/profile'),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-              child: Row(
-                children: [
-                  ZapiAvatar(
-                    displayName: peerName,
-                    photoBase64: peerPhotoBase64,
-                    photoUrl: peerPhoto,
-                    radius: 20,
+          titleSpacing: _isSearching ? null : 0,
+          leading: _isSearching
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: _toggleSearch,
+                )
+              : null,
+          title: _isSearching
+              ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                      _searchMatchIndex = 0;
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Buscar nesta conversa...',
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    contentPadding: EdgeInsets.zero,
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _searchQuery = '';
+                                _searchMatchIndex = 0;
+                              });
+                            },
+                          )
+                        : null,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+                )
+              : InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () =>
+                      context.push('/chats/${widget.chatId}/profile'),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Row(
                       children: [
-                        Text(
-                          peerName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 16.5,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        ZapiAvatar(
+                          displayName: peerName,
+                          photoBase64: peerPhotoBase64,
+                          photoUrl: peerPhoto,
+                          radius: 20,
                         ),
-                        Text(
-                          statusLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: isPeerTyping || presence.online
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                            color: isPeerTyping || presence.online
-                                ? (isDark
-                                    ? AppColors.emeraldBright
-                                    : AppColors.emeraldDark)
-                                : secondaryText,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                peerName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 16.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (statusLabel != null)
+                                Text(
+                                  statusLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isPeerTyping || presence.online
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: isPeerTyping || presence.online
+                                        ? (isDark
+                                            ? AppColors.emeraldBright
+                                            : AppColors.emeraldDark)
+                                        : secondaryText,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
+                ),
+          actions: [
+            if (!_isSearching)
+              IconButton(
+                tooltip: 'Buscar na conversa',
+                icon: const Icon(Icons.search_rounded),
+                onPressed: _toggleSearch,
               ),
-            ),
-          ),
+          ],
         ),
         body: Column(
           children: [
+            if (_isSearching && trimmedSearch.isNotEmpty)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color:
+                      isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                  border: Border(
+                    bottom: BorderSide(
+                      color:
+                          isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      searchMatches.isEmpty
+                          ? 'Nenhuma mensagem encontrada'
+                          : '${safeMatchIdx + 1} de ${searchMatches.length}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: secondaryText,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: 'Ocorrência anterior',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: searchMatches.isNotEmpty &&
+                              safeMatchIdx + 1 < searchMatches.length
+                          ? () => _jumpToMatch(
+                                matches: searchMatches,
+                                allMessages: mergedMessages,
+                                nextMatchIndex: safeMatchIdx + 1,
+                              )
+                          : null,
+                      icon: const Icon(Icons.keyboard_arrow_up_rounded),
+                    ),
+                    IconButton(
+                      tooltip: 'Próxima ocorrência',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: searchMatches.isNotEmpty && safeMatchIdx > 0
+                          ? () => _jumpToMatch(
+                                matches: searchMatches,
+                                allMessages: mergedMessages,
+                                nextMatchIndex: safeMatchIdx - 1,
+                              )
+                          : null,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
-              child: Stack(
-                children: [
+              child: ChatWallpaperBackground(
+                preset: ref.watch(chatWallpaperProvider),
+                child: Stack(
+                  children: [
                   if (cachedMessages == null && messagesAsync.isLoading)
                     const Center(child: CircularProgressIndicator())
                   else if (cachedMessages == null && messagesAsync.hasError)
@@ -911,7 +1633,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                     ),
                                   ),
                                   child: Text(
-                                    'Envie uma mensagem, foto, áudio ou figurinha para $peerName.',
+                                    'Envie uma mensagem, foto, vídeo, arquivo ou figurinha para $peerName.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(color: secondaryText),
                                   ),
@@ -943,6 +1665,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           }
 
                           final message = messages[index];
+                          final messageKey = _messageKeys.putIfAbsent(
+                            message.id,
+                            () => GlobalKey(),
+                          );
                           final olderMessage = index + 1 < messages.length
                               ? messages[index + 1]
                               : null;
@@ -956,6 +1682,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                               thread?.lastMessageId == message.id;
 
                           return Column(
+                            key: messageKey,
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (showDateChip)
@@ -995,6 +1722,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 isMine: message.senderId == _myUid,
                                 currentUid: _myUid,
                                 peerUid: peerUid,
+                                highlightQuery: _isSearching ? _searchQuery : '',
+                                hideReadReceipts: hideReadReceipts,
+                                onReactionTap: (emoji) =>
+                                    _toggleReaction(message, emoji),
                                 onLongPress: () => _showMessageActions(
                                   message: message,
                                   senderLabel: peerName,
@@ -1002,6 +1733,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 ),
                                 onImageTap: () =>
                                     _openImageViewer(message, peerName),
+                                onVideoTap: () =>
+                                    _openVideoViewer(message, peerName),
                                 onCancelUpload: message.isUploading ||
                                         message.uploadFailed
                                     ? () => ref
@@ -1067,7 +1800,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         ),
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
             if (isBlockedByPeer || isBlockedByMe)
@@ -1166,8 +1900,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                     ),
                                   ),
                                   suffixIcon: IconButton(
-                                    tooltip: 'Anexar mídia',
-                                    onPressed: () => _openAttachmentMenu(
+                                    tooltip: 'Enviar arquivo',
+                                    onPressed: () => _pickAndSendFile(
                                       currentUser: currentUser,
                                       peerUser: peerUser,
                                       thread: thread,
@@ -1200,7 +1934,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 44,
+                              height: 48,
+                              child: IconButton(
+                                tooltip: 'Câmera e mídia',
+                                onPressed: () => _openCameraAndMedia(
+                                  currentUser: currentUser,
+                                  peerUser: peerUser,
+                                  thread: thread,
+                                ),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: isDark
+                                      ? AppColors.darkSurfaceAlt
+                                      : AppColors.lightSurface,
+                                  side: BorderSide(
+                                    color: isDark
+                                        ? AppColors.darkBorder
+                                        : AppColors.lightBorder,
+                                  ),
+                                  shape: const CircleBorder(),
+                                ),
+                                icon: Icon(
+                                  Icons.camera_alt_rounded,
+                                  color: secondaryText,
+                                  size: 21,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
                             if (_hasTextInput)
                               SizedBox(
                                 width: 48,
@@ -1275,12 +2038,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                             _scrollToBottom();
                           } on AppException catch (e) {
                             if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(e.message),
-                                backgroundColor:
-                                    Theme.of(context).colorScheme.error,
-                              ),
+                            ZapiToast.showError(
+                              context,
+                              e.message,
+                              bottomOffset: 80,
                             );
                           }
                         },

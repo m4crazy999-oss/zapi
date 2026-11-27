@@ -19,7 +19,7 @@ import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/status/presentation/screens/status_screen.dart';
 import '../../features/stickers/presentation/screens/create_sticker_screen.dart';
 import '../services/notification_service.dart';
-import '../widgets/zapi_logo.dart';
+import '../widgets/zapi_mascot.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -236,14 +236,25 @@ class _SessionLoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ZapiLogo(size: 84, showLabel: true),
-            SizedBox(height: 24),
-            SizedBox(
+            const ZapiMascot(
+              mood: ZapiMascotMood.waiting,
+              size: 108,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Zapi',
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            const SizedBox(
               width: 24,
               height: 24,
               child: CircularProgressIndicator(strokeWidth: 2.5),

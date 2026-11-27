@@ -1,16 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../../../core/services/chat_preferences_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/utils/zapi_toast.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../chats/domain/chat_message.dart';
@@ -46,7 +51,14 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
   bool _isDeleting = false;
 
   final Map<String, Uint8List> _decodedImageCache = {};
+  final Map<String, String> _decodedVideoPaths = {};
   final Set<String> _recordedViewIds = {};
+
+  VideoPlayerController? _videoController;
+  String? _videoControllerStatusId;
+  bool _loadingVideo = false;
+  bool _videoError = false;
+  int _videoInitGeneration = 0;
 
   @override
   void initState() {
@@ -91,14 +103,15 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _currentStatus == null) return;
-      _markCurrentAsViewed();
-      _progressController.forward(from: 0);
+      _activateCurrentSlide();
     });
   }
 
   @override
   void dispose() {
+    _videoInitGeneration++;
     _progressController.dispose();
+    _videoController?.dispose();
     _decodedImageCache.clear();
     super.dispose();
   }
@@ -156,16 +169,126 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
     );
   }
 
+  Future<void> _activateCurrentSlide() async {
+    final item = _currentStatus;
+    if (item == null || !mounted) return;
+
+    _markCurrentAsViewed();
+    _isPaused = false;
+
+    final prevController = _videoController;
+    _videoController = null;
+    _videoControllerStatusId = null;
+    if (prevController != null) {
+      unawaited(prevController.dispose());
+    }
+
+    if (!item.isVideo) {
+      _loadingVideo = false;
+      _videoError = false;
+      _progressController.duration = _slideDuration;
+      _progressController.forward(from: 0);
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final gen = ++_videoInitGeneration;
+    _progressController.stop();
+    _progressController.value = 0;
+    setState(() {
+      _loadingVideo = true;
+      _videoError = false;
+    });
+
+    try {
+      final videoPath = await _ensureVideoTempFile(item);
+      if (!mounted || gen != _videoInitGeneration) return;
+      if (videoPath == null) {
+        setState(() {
+          _loadingVideo = false;
+          _videoError = true;
+        });
+        _progressController.duration = _slideDuration;
+        _progressController.forward(from: 0);
+        return;
+      }
+
+      final controller = VideoPlayerController.file(File(videoPath));
+      await controller.initialize();
+      if (!mounted || gen != _videoInitGeneration) {
+        await controller.dispose();
+        return;
+      }
+
+      final rawDur = controller.value.duration;
+      final clampedMs = (rawDur.inMilliseconds > 0
+              ? rawDur.inMilliseconds
+              : (item.durationMs ?? 6000))
+          .clamp(1200, 60000);
+      _progressController.duration = Duration(milliseconds: clampedMs);
+
+      setState(() {
+        _videoController = controller;
+        _videoControllerStatusId = item.id;
+        _loadingVideo = false;
+      });
+      await controller.play();
+      if (mounted && gen == _videoInitGeneration && !_isPaused) {
+        _progressController.forward(from: 0);
+      }
+    } catch (_) {
+      if (!mounted || gen != _videoInitGeneration) return;
+      setState(() {
+        _loadingVideo = false;
+        _videoError = true;
+      });
+      _progressController.duration = _slideDuration;
+      _progressController.forward(from: 0);
+    }
+  }
+
+  Future<String?> _ensureVideoTempFile(StatusItem item) async {
+    final cachedPath = _decodedVideoPaths[item.id];
+    if (cachedPath != null && await File(cachedPath).exists()) {
+      return cachedPath;
+    }
+    final raw = item.videoBase64?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final clean = raw.contains(',') ? raw.split(',').last : raw;
+      final bytes = base64Decode(clean);
+      if (bytes.isEmpty) return null;
+      final dir = await getTemporaryDirectory();
+      final videoDir = Directory(p.join(dir.path, 'zapi_status_videos'));
+      if (!await videoDir.exists()) {
+        await videoDir.create(recursive: true);
+      }
+      final safeId = item.id.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final file = File(p.join(videoDir.path, '$safeId.mp4'));
+      await file.writeAsBytes(bytes, flush: true);
+      _decodedVideoPaths[item.id] = file.path;
+      return file.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _pause() {
     if (_isPaused) return;
     _isPaused = true;
     _progressController.stop();
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      unawaited(_videoController!.pause());
+    }
   }
 
   void _resume() {
     if (!_isPaused || !mounted) return;
     _isPaused = false;
     _progressController.forward();
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      unawaited(_videoController!.play());
+    }
   }
 
   void _next() {
@@ -187,8 +310,7 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
       return;
     }
 
-    _markCurrentAsViewed();
-    _progressController.forward(from: 0);
+    unawaited(_activateCurrentSlide());
   }
 
   void _previous() {
@@ -201,12 +323,11 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
         _itemIndex = (_groups[prevGroupIndex].statuses.length - 1).clamp(0, 999);
       });
     } else {
-      _progressController.forward(from: 0);
+      unawaited(_activateCurrentSlide());
       return;
     }
 
-    _markCurrentAsViewed();
-    _progressController.forward(from: 0);
+    unawaited(_activateCurrentSlide());
   }
 
   String _formatStatusTimestamp(DateTime createdAt) {
@@ -261,13 +382,10 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
           _itemIndex = group.statuses.length - 1;
         }
       });
-      _progressController.forward(from: 0);
-      _isPaused = false;
+      unawaited(_activateCurrentSlide());
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ZapiToast.showError(context, e.message);
       _resume();
     } finally {
       if (mounted) setState(() => _isDeleting = false);
@@ -401,10 +519,53 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
         : 0;
     final imageBytes = current.isImage ? _decodeStatusImage(current) : null;
 
+    final bgStart = current.isText
+        ? Color(current.backgroundColor)
+        : AppColors.darkBackground;
+    final bgEnd = current.isText && current.backgroundGradientEnd != null
+        ? Color(current.backgroundGradientEnd!)
+        : null;
+    final textAlign = switch (current.textAlign) {
+      'left' => TextAlign.left,
+      'right' => TextAlign.right,
+      _ => TextAlign.center,
+    };
+    final baseFontSize = current.text.length > 140
+        ? (current.fontSize * 0.82).clamp(16.0, 32.0)
+        : current.fontSize;
+    final statusTextColor = Color(current.textColor ?? 0xFFFFFFFF);
+    final textStyle = switch (current.fontStyle) {
+      'serif' => TextStyle(
+          fontFamily: 'serif',
+          color: statusTextColor,
+          fontSize: baseFontSize,
+          fontWeight: FontWeight.w700,
+          height: 1.32,
+        ),
+      'mono' => TextStyle(
+          fontFamily: 'monospace',
+          color: statusTextColor,
+          fontSize: baseFontSize,
+          fontWeight: FontWeight.w600,
+          height: 1.32,
+        ),
+      'display' => TextStyle(
+          color: statusTextColor,
+          fontSize: baseFontSize + 2,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -0.6,
+          height: 1.28,
+        ),
+      _ => TextStyle(
+          color: statusTextColor,
+          fontSize: baseFontSize,
+          fontWeight: FontWeight.w600,
+          height: 1.32,
+        ),
+    };
+
     return Scaffold(
-      backgroundColor: current.isText
-          ? Color(current.backgroundColor)
-          : const Color(0xFF0B141A),
+      backgroundColor: bgStart,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onLongPressStart: (_) => _pause(),
@@ -417,40 +578,73 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
             _next();
           }
         },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (current.isImage)
-              imageBytes != null
-                  ? Center(
-                      child: Image.memory(
-                        imageBytes,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                      ),
-                    )
-                  : const Center(
+        child: Container(
+          decoration: BoxDecoration(
+            color: bgEnd == null ? bgStart : null,
+            gradient: bgEnd != null
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [bgStart, bgEnd],
+                  )
+                : null,
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (current.isImage)
+                imageBytes != null
+                    ? Center(
+                        child: Image.memory(
+                          imageBytes,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                        ),
+                      )
+                    : const Center(
+                        child: Text(
+                          'Não foi possível abrir esta imagem.',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                      )
+              else if (current.isVideo)
+                if (_loadingVideo)
+                  const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  )
+                else if (_videoError ||
+                    _videoController == null ||
+                    _videoControllerStatusId != current.id ||
+                    !_videoController!.value.isInitialized)
+                  const Center(
+                    child: Text(
+                      'Não foi possível reproduzir este vídeo.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  )
+                else
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: _videoController!.value.aspectRatio > 0
+                          ? _videoController!.value.aspectRatio
+                          : 9 / 16,
+                      child: VideoPlayer(_videoController!),
+                    ),
+                  )
+              else
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: SizedBox(
+                      width: double.infinity,
                       child: Text(
-                        'Não foi possível abrir esta imagem.',
-                        style: TextStyle(color: Colors.white70),
+                        current.text,
+                        textAlign: textAlign,
+                        style: textStyle,
                       ),
-                    )
-            else
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Text(
-                    current.text,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: current.text.length > 140 ? 20 : 26,
-                      fontWeight: FontWeight.w600,
-                      height: 1.32,
                     ),
                   ),
                 ),
-              ),
 
             // Barra superior sutil para legibilidade dos controles sobre fotos claras
             Positioned(
@@ -630,7 +824,8 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (current.isImage && current.text.trim().isNotEmpty) ...[
+                      if ((current.isImage || current.isVideo) &&
+                          current.text.trim().isNotEmpty) ...[
                         Text(
                           current.text,
                           textAlign: TextAlign.center,
@@ -701,6 +896,7 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
               ),
             ),
           ],
+          ),
         ),
       ),
     );

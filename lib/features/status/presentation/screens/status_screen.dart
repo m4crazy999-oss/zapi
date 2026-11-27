@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../profile/presentation/providers/profile_providers.dart';
 import '../../domain/status_item.dart';
 import '../providers/status_providers.dart';
@@ -159,8 +160,14 @@ class StatusScreen extends ConsumerWidget {
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'status_create_fab',
         onPressed: () => _openCreateStatus(context),
+        backgroundColor: AppColors.emerald,
+        foregroundColor: Colors.white,
+        tooltip: 'Novo status',
         icon: const Icon(Icons.add_rounded),
-        label: const Text('Novo status'),
+        label: const Text(
+          'Novo status',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 92),
@@ -184,7 +191,7 @@ class StatusScreen extends ConsumerWidget {
             subtitle: Text(
               myLatest != null
                   ? '${myStatuses.length} ativo${myStatuses.length == 1 ? '' : 's'} · ${_formatUpdatedTime(myLatest.createdAt)}'
-                  : 'Toque para publicar texto ou foto',
+                  : 'Toque para publicar texto, foto ou vídeo',
               style: TextStyle(color: secondaryText),
             ),
             trailing: myStatuses.isNotEmpty
@@ -201,9 +208,9 @@ class StatusScreen extends ConsumerWidget {
           ),
           const Divider(height: 1),
           boardAsync.when(
-            loading: () => Padding(
+            loading: () => const Padding(
               padding: EdgeInsets.only(top: 12),
-              child: Center(child: CircularProgressIndicator()),
+              child: ZapiListSkeleton(showTimestamp: false, itemCount: 4),
             ),
             error: (_, __) => Padding(
               padding: const EdgeInsets.all(24),
@@ -224,20 +231,11 @@ class StatusScreen extends ConsumerWidget {
                   ),
                   child: Column(
                     children: [
-                      Container(
-                        width: 68,
-                        height: 68,
-                        decoration: BoxDecoration(
-                          color: AppColors.emerald.withValues(alpha: 0.12),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.donut_large_rounded,
-                          size: 34,
-                          color: AppColors.emerald,
-                        ),
+                      const ZapiMascot(
+                        mood: ZapiMascotMood.resting,
+                        size: 104,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       Text(
                         'Nenhuma atualização por aqui',
                         textAlign: TextAlign.center,

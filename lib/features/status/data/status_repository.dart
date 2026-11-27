@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -91,6 +92,11 @@ class StatusRepository {
     required AppUser owner,
     required String text,
     required int backgroundColor,
+    int? backgroundGradientEnd,
+    int? textColor,
+    String fontStyle = 'sans',
+    String textAlign = 'center',
+    double fontSize = 26.0,
     required List<AppContact> contacts,
     required StatusPrivacyMode privacyMode,
     Set<String> customUids = const {},
@@ -127,7 +133,13 @@ class StatusRepository {
         'type': 'text',
         'text': cleanText,
         'backgroundColor': backgroundColor,
+        'backgroundGradientEnd': backgroundGradientEnd,
+        'textColor': textColor ?? 0xFFFFFFFF,
+        'fontStyle': fontStyle,
+        'textAlign': textAlign,
+        'fontSize': fontSize.clamp(12.0, 48.0),
         'imageBase64': null,
+        'videoBase64': null,
         'privacyMode': privacyMode.code,
         'allowedUids': allowedUids,
         'createdAt': Timestamp.fromDate(now),
@@ -186,6 +198,72 @@ class StatusRepository {
         'text': cleanCaption,
         'backgroundColor': 0xFF0B141A,
         'imageBase64': imageBase64,
+        'videoBase64': null,
+        'privacyMode': privacyMode.code,
+        'allowedUids': allowedUids,
+        'createdAt': Timestamp.fromDate(now),
+        'expiresAt': Timestamp.fromDate(expiresAt),
+      });
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
+  Future<void> createVideoStatus({
+    required AppUser owner,
+    required String sourceVideoPath,
+    required int durationMs,
+    required String caption,
+    required List<AppContact> contacts,
+    required StatusPrivacyMode privacyMode,
+    Set<String> customUids = const {},
+  }) async {
+    final cleanCaption = caption.trim();
+    if (cleanCaption.length > AppConstants.maxStatusTextLength) {
+      throw const AppException(
+        'A legenda do Status passa do limite permitido.',
+      );
+    }
+
+    final file = File(sourceVideoPath);
+    if (!await file.exists()) {
+      throw const AppException('Arquivo de vídeo não encontrado.');
+    }
+
+    final bytes = await file.readAsBytes();
+    final videoBase64 = base64Encode(bytes);
+    if (bytes.length > AppConstants.maxStatusVideoBytes ||
+        videoBase64.length > AppConstants.maxStatusVideoBase64Chars) {
+      throw const AppException(
+        'Esse vídeo ficou pesado demais para o Status. Corte um trecho menor.',
+      );
+    }
+
+    final allowedUids = _buildAllowedUids(
+      ownerUid: owner.uid,
+      contacts: contacts,
+      privacyMode: privacyMode,
+      customUids: customUids,
+    );
+
+    final docRef = _statusesRef.doc();
+    final now = DateTime.now();
+    final expiresAt =
+        now.add(const Duration(hours: AppConstants.statusDurationHours));
+
+    try {
+      await docRef.set({
+        'id': docRef.id,
+        'ownerUid': owner.uid,
+        'ownerName': owner.displayName,
+        'ownerUsername': owner.username,
+        'ownerPhotoBase64': owner.photoBase64,
+        'type': 'video',
+        'text': cleanCaption,
+        'backgroundColor': 0xFF0B141A,
+        'imageBase64': null,
+        'videoBase64': videoBase64,
+        'durationMs': durationMs.clamp(0, 60000),
         'privacyMode': privacyMode.code,
         'allowedUids': allowedUids,
         'createdAt': Timestamp.fromDate(now),

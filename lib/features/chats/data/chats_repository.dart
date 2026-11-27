@@ -79,6 +79,7 @@ class ChatsRepository {
     required String text,
     required bool chatExists,
     ReplyQuote? replyTo,
+    bool isForwarded = false,
   }) async {
     final cleanText = text.trim();
     if (cleanText.isEmpty) return;
@@ -110,6 +111,8 @@ class ChatsRepository {
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'sent',
         'replyTo': replyTo?.toMap(),
+        'isForwarded': isForwarded,
+        'reactions': <String, String>{},
         'deletedFor': <String>[],
         'deletedForEveryone': false,
       },
@@ -132,14 +135,15 @@ class ChatsRepository {
     String? mediaId,
     String? mediaDataBase64,
     String? thumbnailBase64,
-    String? assetPath,
     int? width,
     int? height,
     int? durationMs,
     int? sizeBytes,
     String? mimeType,
+    String? fileName,
     bool? knownChatExists,
     ReplyQuote? replyTo,
+    bool isForwarded = false,
   }) async {
     final cleanCaption = text.trim();
     if (cleanCaption.length > AppConstants.maxMessageLength) {
@@ -147,6 +151,13 @@ class ChatsRepository {
         'A legenda ultrapassa o limite de 4.000 caracteres.',
       );
     }
+
+    final cleanFileName = fileName?.trim();
+    final safeFileName = cleanFileName != null && cleanFileName.isNotEmpty
+        ? (cleanFileName.length > 160
+            ? cleanFileName.substring(0, 160)
+            : cleanFileName)
+        : null;
 
     Map<String, dynamic>? mediaPayload;
     if (mediaId != null &&
@@ -160,6 +171,7 @@ class ChatsRepository {
         'senderId': sender.uid,
         'type': type,
         'mimeType': mimeType ?? 'application/octet-stream',
+        if (safeFileName != null) 'fileName': safeFileName,
         'data': mediaDataBase64,
         'sizeBytes': sizeBytes ?? 0,
         'width': width,
@@ -186,13 +198,15 @@ class ChatsRepository {
         'type': type,
         'mediaId': mediaId,
         'thumbnailBase64': thumbnailBase64,
-        'assetPath': assetPath,
         'width': width,
         'height': height,
         'durationMs': durationMs,
         'sizeBytes': sizeBytes ?? 0,
         'mimeType': mimeType,
+        if (safeFileName != null) 'fileName': safeFileName,
         'playedBy': <String>[],
+        'reactions': <String, String>{},
+        'isForwarded': isForwarded,
         'clientCreatedAt': clientCreatedAt,
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'sent',
@@ -204,6 +218,7 @@ class ChatsRepository {
         type: type,
         text: cleanCaption,
         durationMs: durationMs,
+        fileName: safeFileName,
       ),
       lastMessageType: type,
     );
@@ -536,7 +551,54 @@ class ChatsRepository {
     required String currentUid,
     required List<ChatMessage> messages,
     ChatThread? thread,
+    bool sendReadReceipt = true,
   }) async {
+    if (!sendReadReceipt) {
+      final toDeliver = messages
+          .where(
+            (m) =>
+                m.senderId != currentUid &&
+                !m.hasPendingWrites &&
+                !m.isUploading &&
+                m.status == MessageStatus.sent,
+          )
+          .toList();
+
+      final needsUnreadReset = thread != null &&
+          (thread.unreadFor(currentUid) > 0 ||
+              (thread.lastMessageSenderId != currentUid &&
+                  thread.lastMessageStatus == 'sent'));
+
+      if (toDeliver.isEmpty && !needsUnreadReset) return;
+
+      try {
+        final batch = _firestore.batch();
+        final messagesCol =
+            _chatsRef.doc(chatId).collection(AppConstants.messagesSubcollection);
+
+        for (final msg in toDeliver) {
+          batch.update(messagesCol.doc(msg.id), {
+            'status': 'delivered',
+            'deliveredAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        if (thread != null) {
+          final updates = <String, dynamic>{
+            'unreadCount.$currentUid': 0,
+          };
+          if (thread.lastMessageSenderId != currentUid &&
+              thread.lastMessageStatus == 'sent') {
+            updates['lastMessageStatus'] = 'delivered';
+          }
+          batch.update(_chatsRef.doc(chatId), updates);
+        }
+
+        await batch.commit();
+      } catch (_) {}
+      return;
+    }
+
     final toRead = messages
         .where(
           (m) =>
@@ -581,6 +643,31 @@ class ChatsRepository {
     } catch (_) {}
   }
 
+  Future<void> toggleReaction({
+    required String chatId,
+    required String messageId,
+    required String uid,
+    required String emoji,
+    required String? currentReaction,
+  }) async {
+    if (chatId.isEmpty || messageId.isEmpty || uid.isEmpty) return;
+    final cleanEmoji = emoji.trim();
+    if (cleanEmoji.isEmpty) return;
+    final remove = currentReaction == cleanEmoji;
+
+    try {
+      await _chatsRef
+          .doc(chatId)
+          .collection(AppConstants.messagesSubcollection)
+          .doc(messageId)
+          .update({
+        'reactions.$uid': remove ? FieldValue.delete() : cleanEmoji,
+      });
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
   Future<void> deleteMessageForMe({
     required String chatId,
     required String messageId,
@@ -616,9 +703,10 @@ class ChatsRepository {
         'text': '',
         'mediaId': null,
         'thumbnailBase64': null,
-        'assetPath': null,
         'mediaUrl': null,
         'thumbnailUrl': null,
+        'fileName': null,
+        'reactions': <String, String>{},
         'deletedAt': FieldValue.serverTimestamp(),
       });
       if (mediaId != null && mediaId.isNotEmpty) {

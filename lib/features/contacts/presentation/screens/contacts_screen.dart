@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../domain/app_contact.dart';
 import '../providers/contacts_providers.dart';
@@ -110,20 +111,13 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 76,
-                            height: 76,
-                            decoration: BoxDecoration(
-                              color: AppColors.emerald.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.people_rounded,
-                              size: 38,
-                              color: AppColors.emerald,
-                            ),
+                          ZapiMascot(
+                            mood: query.isNotEmpty
+                                ? ZapiMascotMood.excited
+                                : ZapiMascotMood.waiting,
+                            size: 102,
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 14),
                           Text(
                             query.isNotEmpty
                                 ? 'Nenhum contato encontrado'

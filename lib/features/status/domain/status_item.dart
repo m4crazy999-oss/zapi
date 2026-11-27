@@ -19,6 +19,20 @@ enum StatusPrivacyMode {
   }
 }
 
+class StatusStylePreset {
+  const StatusStylePreset({
+    required this.label,
+    required this.backgroundColor,
+    this.backgroundGradientEnd,
+    this.defaultTextColor = 0xFFFFFFFF,
+  });
+
+  final String label;
+  final int backgroundColor;
+  final int? backgroundGradientEnd;
+  final int defaultTextColor;
+}
+
 class StatusItem {
   const StatusItem({
     required this.id,
@@ -34,6 +48,13 @@ class StatusItem {
     required this.expiresAt,
     this.ownerPhotoBase64,
     this.imageBase64,
+    this.videoBase64,
+    this.durationMs,
+    this.backgroundGradientEnd,
+    this.textColor,
+    this.fontStyle = 'sans',
+    this.textAlign = 'center',
+    this.fontSize = 26.0,
   });
 
   final String id;
@@ -41,16 +62,24 @@ class StatusItem {
   final String ownerName;
   final String ownerUsername;
   final String? ownerPhotoBase64;
-  final String type; // 'text' | 'image'
+  final String type; // 'text' | 'image' | 'video'
   final String text;
   final int backgroundColor;
+  final int? backgroundGradientEnd;
+  final int? textColor;
+  final String fontStyle; // 'sans' | 'serif' | 'mono' | 'display'
+  final String textAlign; // 'left' | 'center' | 'right'
+  final double fontSize;
   final String? imageBase64;
+  final String? videoBase64;
+  final int? durationMs;
   final StatusPrivacyMode privacyMode;
   final List<String> allowedUids;
   final DateTime createdAt;
   final DateTime expiresAt;
 
   bool get isImage => type == 'image';
+  bool get isVideo => type == 'video';
   bool get isText => type == 'text';
   bool get isExpired => !expiresAt.isAfter(DateTime.now());
 
@@ -58,6 +87,10 @@ class StatusItem {
     if (isImage) {
       final clean = text.trim();
       return clean.isEmpty ? 'Status: Foto' : 'Status: $clean';
+    }
+    if (isVideo) {
+      final clean = text.trim();
+      return clean.isEmpty ? 'Status: Vídeo' : 'Status: $clean';
     }
     return 'Status: ${text.trim()}';
   }
@@ -71,6 +104,62 @@ class StatusItem {
     0xFF0F766E, // Petróleo
     0xFF334155, // Ardósia
     0xFF1F2937, // Grafite
+  ];
+
+  static const List<StatusStylePreset> stylePresets = [
+    StatusStylePreset(
+      label: 'Esmeralda',
+      backgroundColor: 0xFF00A884,
+      backgroundGradientEnd: 0xFF006D5B,
+    ),
+    StatusStylePreset(
+      label: 'Oceano',
+      backgroundColor: 0xFF0284C7,
+      backgroundGradientEnd: 0xFF1E3A8A,
+    ),
+    StatusStylePreset(
+      label: 'Crepúsculo',
+      backgroundColor: 0xFFF97316,
+      backgroundGradientEnd: 0xFFBE185D,
+    ),
+    StatusStylePreset(
+      label: 'Violeta',
+      backgroundColor: 0xFF7C3AED,
+      backgroundGradientEnd: 0xFF3B0764,
+    ),
+    StatusStylePreset(
+      label: 'Floresta',
+      backgroundColor: 0xFF0F766E,
+      backgroundGradientEnd: 0xFF064E3B,
+    ),
+    StatusStylePreset(
+      label: 'Noite',
+      backgroundColor: 0xFF1F2937,
+      backgroundGradientEnd: 0xFF0B141A,
+    ),
+    StatusStylePreset(
+      label: 'Verde Zapi',
+      backgroundColor: 0xFF00A884,
+    ),
+    StatusStylePreset(
+      label: 'Ardósia',
+      backgroundColor: 0xFF334155,
+    ),
+    StatusStylePreset(
+      label: 'Claro',
+      backgroundColor: 0xFFF1F5F9,
+      backgroundGradientEnd: 0xFFE2E8F0,
+      defaultTextColor: 0xFF0F172A,
+    ),
+  ];
+
+  static const List<int> textColorOptions = [
+    0xFFFFFFFF,
+    0xFF0F172A,
+    0xFFFEF08A,
+    0xFFA7F3D0,
+    0xFFBAE6FD,
+    0xFFFBCFE8,
   ];
 
   factory StatusItem.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -90,8 +179,15 @@ class StatusItem {
       type: (data['type'] as String?) ?? 'text',
       text: (data['text'] as String?) ?? '',
       backgroundColor:
-          (data['backgroundColor'] as int?) ?? textBackgroundColors.first,
+          (data['backgroundColor'] as num?)?.toInt() ?? textBackgroundColors.first,
+      backgroundGradientEnd: (data['backgroundGradientEnd'] as num?)?.toInt(),
+      textColor: (data['textColor'] as num?)?.toInt(),
+      fontStyle: (data['fontStyle'] as String?) ?? 'sans',
+      textAlign: (data['textAlign'] as String?) ?? 'center',
+      fontSize: ((data['fontSize'] as num?)?.toDouble() ?? 26.0).clamp(14.0, 44.0),
       imageBase64: data['imageBase64'] as String?,
+      videoBase64: data['videoBase64'] as String?,
+      durationMs: (data['durationMs'] as num?)?.toInt(),
       privacyMode: StatusPrivacyMode.fromCode(data['privacyMode'] as String?),
       allowedUids: rawAllowed is List
           ? rawAllowed.whereType<String>().toList()

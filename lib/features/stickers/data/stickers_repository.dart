@@ -36,7 +36,12 @@ class StickersRepository {
     return _userStickersRef(uid)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map(ZapiSticker.fromFirestore).toList());
+        .map(
+          (snap) => snap.docs
+              .map(ZapiSticker.fromFirestore)
+              .where((s) => s.dataBase64 != null && s.dataBase64!.isNotEmpty)
+              .toList(),
+        );
   }
 
   Future<ZapiSticker> createCustomSticker({
@@ -57,11 +62,9 @@ class StickersRepository {
       await _userStickersRef(uid).doc(stickerId).set({
         'id': stickerId,
         'data': b64,
-        'assetPath': null,
         'mimeType': 'image/webp',
         'sizeBytes': webpBytes.length,
         'isFavorite': false,
-        'isBuiltIn': false,
         'createdAt': FieldValue.serverTimestamp(),
         'lastUsedAt': FieldValue.serverTimestamp(),
       });
@@ -78,7 +81,6 @@ class StickersRepository {
         mimeType: 'image/webp',
         sizeBytes: webpBytes.length,
         isFavorite: false,
-        isBuiltIn: false,
         createdAt: now,
         lastUsedAt: now,
       );
@@ -89,42 +91,11 @@ class StickersRepository {
 
   Future<ZapiSticker> saveReceivedSticker({
     required String uid,
-    String? assetPath,
     String? chatId,
     String? mediaId,
     String? mimeType,
   }) async {
     try {
-      if (assetPath != null && assetPath.startsWith('asset://')) {
-        final builtIn = AppConstants.builtInStickers.firstWhere(
-          (s) => s.assetPath == assetPath,
-          orElse: () => (
-            id: 'builtin_${assetPath.hashCode.abs()}',
-            label: 'Figurinha',
-            assetPath: assetPath,
-          ),
-        );
-        await _userStickersRef(uid).doc(builtIn.id).set({
-          'id': builtIn.id,
-          'data': null,
-          'assetPath': builtIn.assetPath,
-          'mimeType': 'image/png',
-          'sizeBytes': 0,
-          'isFavorite': true,
-          'isBuiltIn': true,
-          'createdAt': FieldValue.serverTimestamp(),
-          'lastUsedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        return ZapiSticker(
-          id: builtIn.id,
-          assetPath: builtIn.assetPath,
-          mimeType: 'image/png',
-          isFavorite: true,
-          isBuiltIn: true,
-        );
-      }
-
       if (chatId == null || mediaId == null || mediaId.isEmpty) {
         throw const AppException('Figurinha indisponível para salvar.');
       }
@@ -160,25 +131,9 @@ class StickersRepository {
   }) async {
     try {
       final nextFavorite = !sticker.isFavorite;
-      final docRef = _userStickersRef(uid).doc(sticker.id);
-
-      if (sticker.isBuiltIn) {
-        await docRef.set({
-          'id': sticker.id,
-          'data': null,
-          'assetPath': sticker.assetPath,
-          'mimeType': 'image/png',
-          'sizeBytes': 0,
-          'isFavorite': nextFavorite,
-          'isBuiltIn': true,
-          'createdAt': FieldValue.serverTimestamp(),
-          'lastUsedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } else {
-        await docRef.update({
-          'isFavorite': nextFavorite,
-        });
-      }
+      await _userStickersRef(uid).doc(sticker.id).update({
+        'isFavorite': nextFavorite,
+      });
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
     }
@@ -188,7 +143,6 @@ class StickersRepository {
     required String uid,
     required ZapiSticker sticker,
   }) async {
-    if (sticker.isBuiltIn) return;
     try {
       await _userStickersRef(uid).doc(sticker.id).delete();
     } catch (error) {

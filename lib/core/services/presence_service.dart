@@ -36,6 +36,30 @@ class PresenceService {
   StreamSubscription<DatabaseEvent>? _connectedSub;
   String? _boundUid;
   bool _isResumed = true;
+  bool _hideLastSeen = false;
+
+  Future<void> setHideLastSeen(bool hidden) async {
+    if (_hideLastSeen == hidden) return;
+    _hideLastSeen = hidden;
+    final uid = _boundUid ?? _auth.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final userPresenceRef =
+          _database.ref('${AppConstants.rtdbPresencePath}/$uid');
+      if (hidden) {
+        await userPresenceRef.set({'online': false});
+      } else if (_isResumed) {
+        await userPresenceRef.onDisconnect().set({
+          'online': false,
+          'lastSeen': ServerValue.timestamp,
+        });
+        await userPresenceRef.set({
+          'online': true,
+          'lastSeen': ServerValue.timestamp,
+        });
+      }
+    } catch (_) {}
+  }
 
   Future<void> bindUser(String uid) async {
     if (_boundUid == uid && _connectedSub != null) return;
@@ -52,6 +76,10 @@ class PresenceService {
         final userPresenceRef =
             _database.ref('${AppConstants.rtdbPresencePath}/$uid');
         try {
+          if (_hideLastSeen) {
+            await userPresenceRef.set({'online': false});
+            return;
+          }
           await userPresenceRef.onDisconnect().set({
             'online': false,
             'lastSeen': ServerValue.timestamp,
@@ -79,7 +107,9 @@ class PresenceService {
     try {
       final userPresenceRef =
           _database.ref('${AppConstants.rtdbPresencePath}/$uid');
-      if (isForeground) {
+      if (_hideLastSeen) {
+        await userPresenceRef.set({'online': false});
+      } else if (isForeground) {
         await userPresenceRef.onDisconnect().set({
           'online': false,
           'lastSeen': ServerValue.timestamp,
@@ -96,7 +126,7 @@ class PresenceService {
       }
     } catch (_) {}
 
-    if (!isForeground) {
+    if (!isForeground && !_hideLastSeen) {
       try {
         await _firestore
             .collection(AppConstants.usersCollection)

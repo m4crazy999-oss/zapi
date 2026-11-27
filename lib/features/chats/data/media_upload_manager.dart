@@ -32,7 +32,9 @@ class PendingMediaItem {
     this.durationMs,
     this.sizeBytes,
     this.mimeType,
+    this.fileName,
     this.replyTo,
+    this.isForwarded = false,
     this.progress = 0.0,
     this.isFailed = false,
     this.isCanceled = false,
@@ -54,7 +56,9 @@ class PendingMediaItem {
   final int? durationMs;
   final int? sizeBytes;
   final String? mimeType;
+  final String? fileName;
   final ReplyQuote? replyTo;
+  final bool isForwarded;
   final double progress;
   final bool isFailed;
   final bool isCanceled;
@@ -89,7 +93,9 @@ class PendingMediaItem {
       durationMs: durationMs,
       sizeBytes: sizeBytes ?? this.sizeBytes,
       mimeType: mimeType,
+      fileName: fileName,
       replyTo: replyTo,
+      isForwarded: isForwarded,
       progress: progress ?? this.progress,
       isFailed: isFailed ?? this.isFailed,
       isCanceled: isCanceled ?? this.isCanceled,
@@ -117,6 +123,8 @@ class PendingMediaItem {
       durationMs: durationMs,
       sizeBytes: sizeBytes,
       mimeType: mimeType,
+      fileName: fileName,
+      isForwarded: isForwarded,
       localMediaPath: localMediaPath,
       localThumbnailPath: localThumbnailPath,
       isUploading: !isFailed,
@@ -146,6 +154,7 @@ class MediaUploadManager
     required AppUser recipient,
     required List<({String sourcePath, String caption})> photos,
     ReplyQuote? replyTo,
+    bool isForwarded = false,
   }) async {
     var baseTimestamp = DateTime.now().millisecondsSinceEpoch;
     for (final photo in photos) {
@@ -162,6 +171,7 @@ class MediaUploadManager
         localThumbnailPath: photo.sourcePath,
         mimeType: 'image/jpeg',
         replyTo: replyTo,
+        isForwarded: isForwarded,
       );
       _upsertItem(item);
       unawaited(_processAndUploadPhoto(item));
@@ -175,6 +185,7 @@ class MediaUploadManager
     required String filePath,
     required int durationMs,
     ReplyQuote? replyTo,
+    bool isForwarded = false,
   }) async {
     final file = File(filePath);
     final sizeBytes = await file.exists() ? await file.length() : 0;
@@ -201,9 +212,90 @@ class MediaUploadManager
       sizeBytes: sizeBytes,
       mimeType: 'audio/mp4',
       replyTo: replyTo,
+      isForwarded: isForwarded,
     );
     _upsertItem(item);
     unawaited(_uploadAudio(item));
+  }
+
+  Future<void> enqueueFile({
+    required String chatId,
+    required AppUser sender,
+    required AppUser recipient,
+    required String filePath,
+    required String fileName,
+    required String mimeType,
+    required int sizeBytes,
+    ReplyQuote? replyTo,
+    bool isForwarded = false,
+  }) async {
+    if (sizeBytes <= 0) {
+      throw const AppException('Esse arquivo está vazio e não pode ser enviado.');
+    }
+    if (sizeBytes > AppConstants.maxChatFileBytes ||
+        sizeBytes * 4 > AppConstants.maxFirestoreMediaBase64Chars * 3) {
+      throw const AppException(
+        'Esse arquivo é grande demais. O máximo permitido é cerca de 680 KB.',
+      );
+    }
+
+    final messageId = _uuid.v4();
+    final item = PendingMediaItem(
+      id: messageId,
+      chatId: chatId,
+      type: MessageTypes.file,
+      sender: sender,
+      recipient: recipient,
+      text: '',
+      clientCreatedAt: DateTime.now().millisecondsSinceEpoch,
+      localMediaPath: filePath,
+      sizeBytes: sizeBytes,
+      mimeType: mimeType,
+      fileName: fileName,
+      replyTo: replyTo,
+      isForwarded: isForwarded,
+    );
+    _upsertItem(item);
+    unawaited(_uploadFile(item));
+  }
+
+  Future<void> enqueueVideo({
+    required String chatId,
+    required AppUser sender,
+    required AppUser recipient,
+    required String filePath,
+    required int durationMs,
+    required int sizeBytes,
+    String caption = '',
+    ReplyQuote? replyTo,
+    bool isForwarded = false,
+  }) async {
+    if (sizeBytes <= 0 ||
+        sizeBytes > AppConstants.maxChatVideoBytes ||
+        sizeBytes * 4 > AppConstants.maxFirestoreMediaBase64Chars * 3) {
+      throw const AppException(
+        'Esse vídeo ficou pesado demais. Corte um trecho menor.',
+      );
+    }
+
+    final messageId = _uuid.v4();
+    final item = PendingMediaItem(
+      id: messageId,
+      chatId: chatId,
+      type: MessageTypes.video,
+      sender: sender,
+      recipient: recipient,
+      text: caption.trim(),
+      clientCreatedAt: DateTime.now().millisecondsSinceEpoch,
+      localMediaPath: filePath,
+      durationMs: durationMs,
+      sizeBytes: sizeBytes,
+      mimeType: 'video/mp4',
+      replyTo: replyTo,
+      isForwarded: isForwarded,
+    );
+    _upsertItem(item);
+    unawaited(_uploadVideo(item));
   }
 
   Future<void> sendSticker({
@@ -213,28 +305,10 @@ class MediaUploadManager
     required ZapiSticker sticker,
     required bool chatExists,
     ReplyQuote? replyTo,
+    bool isForwarded = false,
   }) async {
     final messageId = _uuid.v4();
     final repo = ref.read(chatsRepositoryProvider);
-
-    if (sticker.isAsset && sticker.assetPath != null) {
-      await repo.sendMediaMessage(
-        chatId: chatId,
-        messageId: messageId,
-        sender: sender,
-        recipient: recipient,
-        type: MessageTypes.sticker,
-        assetPath: sticker.assetPath,
-        width: AppConstants.stickerSizePx,
-        height: AppConstants.stickerSizePx,
-        mimeType: 'image/png',
-        sizeBytes: 0,
-        clientCreatedAt: DateTime.now().millisecondsSinceEpoch,
-        knownChatExists: chatExists,
-        replyTo: replyTo,
-      );
-      return;
-    }
 
     final rawBase64 = sticker.dataBase64?.trim() ?? '';
     if (rawBase64.isEmpty) {
@@ -271,6 +345,7 @@ class MediaUploadManager
       clientCreatedAt: DateTime.now().millisecondsSinceEpoch,
       knownChatExists: chatExists,
       replyTo: replyTo,
+      isForwarded: isForwarded,
     );
   }
 
@@ -290,6 +365,10 @@ class MediaUploadManager
       await _processAndUploadPhoto(reset);
     } else if (reset.type == MessageTypes.audio) {
       await _uploadAudio(reset);
+    } else if (reset.type == MessageTypes.file) {
+      await _uploadFile(reset);
+    } else if (reset.type == MessageTypes.video) {
+      await _uploadVideo(reset);
     }
   }
 
@@ -364,6 +443,7 @@ class MediaUploadManager
             mimeType: 'image/jpeg',
             clientCreatedAt: current.clientCreatedAt,
             replyTo: current.replyTo,
+            isForwarded: current.isForwarded,
           );
 
       _removeItem(current.chatId, current.id);
@@ -431,6 +511,143 @@ class MediaUploadManager
             mimeType: 'audio/mp4',
             clientCreatedAt: current.clientCreatedAt,
             replyTo: current.replyTo,
+            isForwarded: current.isForwarded,
+          );
+
+      _removeItem(current.chatId, current.id);
+    } catch (error) {
+      if (_isCanceled(current.chatId, current.id)) return;
+      final mapped = FirebaseErrorMapper.map(error);
+      final latest = _findItem(current.chatId, current.id) ?? current;
+      _upsertItem(
+        latest.copyWith(
+          isFailed: true,
+          errorMessage: mapped.message,
+        ),
+      );
+    }
+  }
+
+  Future<void> _uploadFile(PendingMediaItem initial) async {
+    var current = initial;
+    try {
+      current = current.copyWith(progress: 0.25);
+      _upsertItem(current);
+
+      final file = File(current.localMediaPath);
+      if (!await file.exists()) {
+        throw const AppException('Arquivo local não encontrado.');
+      }
+
+      final bytes = await file.readAsBytes();
+      final b64 = base64Encode(bytes);
+      if (bytes.length > AppConstants.maxChatFileBytes ||
+          b64.length > AppConstants.maxFirestoreMediaBase64Chars) {
+        throw const AppException(
+          'Esse arquivo é grande demais. Escolha um arquivo menor.',
+        );
+      }
+
+      if (_isCanceled(current.chatId, current.id)) return;
+
+      final cachedFile =
+          await ref.read(mediaCacheServiceProvider).seedChatMediaBytes(
+                chatId: current.chatId,
+                mediaId: current.id,
+                mimeType: current.mimeType ?? 'application/octet-stream',
+                fileName: current.fileName,
+                bytes: bytes,
+              );
+
+      current = current.copyWith(
+        localMediaPath: cachedFile.path,
+        sizeBytes: bytes.length,
+        progress: 0.72,
+      );
+      _upsertItem(current);
+
+      await ref.read(chatsRepositoryProvider).sendMediaMessage(
+            chatId: current.chatId,
+            messageId: current.id,
+            sender: current.sender,
+            recipient: current.recipient,
+            type: MessageTypes.file,
+            mediaId: current.id,
+            mediaDataBase64: b64,
+            sizeBytes: bytes.length,
+            mimeType: current.mimeType ?? 'application/octet-stream',
+            fileName: current.fileName,
+            clientCreatedAt: current.clientCreatedAt,
+            replyTo: current.replyTo,
+            isForwarded: current.isForwarded,
+          );
+
+      _removeItem(current.chatId, current.id);
+    } catch (error) {
+      if (_isCanceled(current.chatId, current.id)) return;
+      final mapped = FirebaseErrorMapper.map(error);
+      final latest = _findItem(current.chatId, current.id) ?? current;
+      _upsertItem(
+        latest.copyWith(
+          isFailed: true,
+          errorMessage: mapped.message,
+        ),
+      );
+    }
+  }
+
+  Future<void> _uploadVideo(PendingMediaItem initial) async {
+    var current = initial;
+    try {
+      current = current.copyWith(progress: 0.25);
+      _upsertItem(current);
+
+      final file = File(current.localMediaPath);
+      if (!await file.exists()) {
+        throw const AppException('Arquivo de vídeo não encontrado.');
+      }
+
+      final bytes = await file.readAsBytes();
+      final b64 = base64Encode(bytes);
+      if (bytes.length > AppConstants.maxChatVideoBytes ||
+          b64.length > AppConstants.maxFirestoreMediaBase64Chars) {
+        throw const AppException(
+          'Esse vídeo ficou pesado demais. Corte um trecho menor.',
+        );
+      }
+
+      if (_isCanceled(current.chatId, current.id)) return;
+
+      final cachedFile =
+          await ref.read(mediaCacheServiceProvider).seedChatMediaBytes(
+                chatId: current.chatId,
+                mediaId: current.id,
+                mimeType: 'video/mp4',
+                bytes: bytes,
+              );
+
+      current = current.copyWith(
+        localMediaPath: cachedFile.path,
+        sizeBytes: bytes.length,
+        progress: 0.72,
+      );
+      _upsertItem(current);
+
+      await ref.read(chatsRepositoryProvider).sendMediaMessage(
+            chatId: current.chatId,
+            messageId: current.id,
+            sender: current.sender,
+            recipient: current.recipient,
+            type: MessageTypes.video,
+            text: current.text,
+            mediaId: current.id,
+            mediaDataBase64: b64,
+            durationMs: current.durationMs,
+            sizeBytes: bytes.length,
+            mimeType: 'video/mp4',
+            clientCreatedAt: current.clientCreatedAt,
+            replyTo: current.replyTo,
+            isForwarded: current.isForwarded,
           );
 
       _removeItem(current.chatId, current.id);

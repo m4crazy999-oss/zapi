@@ -69,8 +69,18 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
     final session = await AudioSession.instance;
     if (!_sessionConfigured) {
       _sessionConfigured = true;
-      // Usa perfil de mídia/música para sair no alto-falante principal (nunca no fone de ouvido interno de chamada).
-      await session.configure(const AudioSessionConfiguration.music());
+      // Garante roteamento para mídia no alto-falante principal (AndroidAudioUsage.media), nunca no fone de ouvido de chamada.
+      await session.configure(
+        const AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playback,
+          avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+          androidAudioAttributes: AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.speech,
+            usage: AndroidAudioUsage.media,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransient,
+        ),
+      );
 
       _interruptionSub = session.interruptionEventStream.listen((event) {
         if (event.begin) {
@@ -226,7 +236,12 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
 
   Future<void> seek(String messageId, Duration target) async {
     if (state.activeMessageId != messageId || _player == null) return;
-    await _player!.seek(target);
+    final maxMs = state.duration.inMilliseconds;
+    final clamped = maxMs > 0
+        ? Duration(milliseconds: target.inMilliseconds.clamp(0, maxMs))
+        : target;
+    state = state.copyWith(position: clamped);
+    await _player!.seek(clamped);
   }
 
   Future<void> cycleSpeed() async {
@@ -241,6 +256,9 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
 
   Future<void> pause() async {
     await _player?.pause();
+    if (ref.mounted) {
+      state = state.copyWith(isPlaying: false);
+    }
     try {
       if (_sessionConfigured) {
         final session = await AudioSession.instance;

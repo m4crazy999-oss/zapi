@@ -9,6 +9,7 @@ import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/image_helper.dart';
 import '../../../../core/utils/media_processor.dart';
 import '../../../../core/utils/permission_helper.dart';
+import '../../../../core/utils/zapi_toast.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../providers/stickers_providers.dart';
 
@@ -44,14 +45,11 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
       await _renderStickerPreview();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error is AppException
-                ? error.message
-                : 'Não foi possível preparar a imagem selecionada.',
-          ),
-        ),
+      ZapiToast.showError(
+        context,
+        error is AppException
+            ? error.message
+            : 'Não foi possível preparar a imagem selecionada.',
       );
     }
   }
@@ -72,12 +70,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
       });
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -97,12 +90,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
       Navigator.pop(context, sticker);
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

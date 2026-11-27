@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../features/profile/presentation/screens/avatar_crop_screen.dart';
 import '../constants/app_constants.dart';
+import '../services/app_lock_service.dart';
 import 'app_exceptions.dart';
 import 'media_processor.dart';
 
@@ -19,6 +20,27 @@ class ImageHelper {
   static final ImagePicker _picker = ImagePicker();
   static const _uuid = Uuid();
 
+  static Future<XFile?> _pickImageGuarded({
+    required ImageSource source,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+  }) async {
+    AppLockBridge.isPromptActive = true;
+    try {
+      return await _picker.pickImage(
+        source: source,
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        imageQuality: imageQuality,
+      );
+    } finally {
+      Future<void>.delayed(const Duration(milliseconds: 600), () {
+        AppLockBridge.isPromptActive = false;
+      });
+    }
+  }
+
   /// Seleciona foto (estática ou animada GIF/WebP), abre tela de confirmação
   /// com botão inferior acessível e garante <= 100 KB em base64.
   static Future<Uint8List?> pickCropAndCompressAvatar(
@@ -26,13 +48,13 @@ class ImageHelper {
     ImageSource source,
   ) async {
     final picked = source == ImageSource.camera
-        ? await _picker.pickImage(
+        ? await _pickImageGuarded(
             source: source,
             maxWidth: 1280,
             maxHeight: 1280,
             imageQuality: 92,
           )
-        : await _picker.pickImage(source: source);
+        : await _pickImageGuarded(source: source);
     if (picked == null || !context.mounted) return null;
 
     final rawBytes = await File(picked.path).readAsBytes();
@@ -80,7 +102,7 @@ class ImageHelper {
     ImageSource source, {
     String title = 'Recortar figurinha',
   }) async {
-    final picked = await _picker.pickImage(source: source);
+    final picked = await _pickImageGuarded(source: source);
     if (picked == null || !context.mounted) return null;
 
     final rawBytes = await File(picked.path).readAsBytes();
@@ -143,7 +165,7 @@ class ImageHelper {
   static Future<Uint8List?> pickCropAndCompressBanner(
     BuildContext context,
   ) async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery);
+    final picked = await _pickImageGuarded(source: ImageSource.gallery);
     if (picked == null || !context.mounted) return null;
 
     final rawBytes = await File(picked.path).readAsBytes();

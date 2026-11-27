@@ -32,6 +32,7 @@ class VoiceRecorderController {
   static const int _barCount = 18;
 
   bool isRecording = false;
+  bool isPaused = false;
   bool isLocked = false;
   bool isCanceling = false;
   Duration elapsed = Duration.zero;
@@ -43,6 +44,7 @@ class VoiceRecorderController {
   Timer? _tickTimer;
   Timer? _ampTimer;
   DateTime? _startedAt;
+  Duration _accumulatedBeforePause = Duration.zero;
   String? _currentPath;
   Offset? _pointerStart;
   bool _starting = false;
@@ -104,7 +106,9 @@ class VoiceRecorderController {
       _currentPath = filePath;
       _pointerStart = event.position;
       _startedAt = DateTime.now();
+      _accumulatedBeforePause = Duration.zero;
       isRecording = true;
+      isPaused = false;
       isLocked = false;
       isCanceling = false;
       elapsed = Duration.zero;
@@ -198,6 +202,49 @@ class VoiceRecorderController {
     await finishAndSend();
   }
 
+  Future<void> pauseRecording() async {
+    if (!isRecording || isPaused || _stopInFlight != null) return;
+    try {
+      _stopTimers();
+      final totalMs = _currentDurationMs();
+      _accumulatedBeforePause = Duration(milliseconds: totalMs);
+      elapsed = _accumulatedBeforePause;
+      _startedAt = null;
+      isLocked = true;
+      await _recorder.pause();
+      isPaused = true;
+      await HapticFeedback.selectionClick();
+      onStateChanged();
+    } catch (_) {
+      onFeedbackMessage('Não foi possível pausar este áudio agora.');
+    }
+  }
+
+  Future<void> resumeRecording() async {
+    if (!isRecording || !isPaused || _stopInFlight != null) return;
+    try {
+      if (onBeforeRecordStart != null) {
+        await onBeforeRecordStart!().catchError((_) {});
+      }
+      await _recorder.resume();
+      _startedAt = DateTime.now();
+      isPaused = false;
+      _startTimers();
+      await HapticFeedback.lightImpact();
+      onStateChanged();
+    } catch (_) {
+      onFeedbackMessage('Não foi possível continuar a gravação.');
+    }
+  }
+
+  Future<void> togglePauseResume() async {
+    if (isPaused) {
+      await resumeRecording();
+    } else {
+      await pauseRecording();
+    }
+  }
+
   Future<void> finishAndSend() async {
     if (!isRecording) return;
     if (_stopInFlight != null) {
@@ -273,10 +320,11 @@ class VoiceRecorderController {
     _ampTimer?.cancel();
 
     _tickTimer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
-      if (!isRecording || _startedAt == null) return;
-      final diff = DateTime.now().difference(_startedAt!);
-      elapsed = diff;
-      if (diff >= AppConstants.maxAudioDuration) {
+      if (!isRecording || isPaused || _startedAt == null) return;
+      final total = _accumulatedBeforePause +
+          DateTime.now().difference(_startedAt!);
+      elapsed = total;
+      if (total >= AppConstants.maxAudioDuration) {
         onFeedbackMessage('Limite de 3 minutos atingido. Enviando áudio...');
         await finishAndSend();
         return;
@@ -286,7 +334,7 @@ class VoiceRecorderController {
 
     // Atualiza ~15 vezes por segundo com base na amplitude real do microfone (dBFS).
     _ampTimer = Timer.periodic(const Duration(milliseconds: 65), (_) async {
-      if (!isRecording) return;
+      if (!isRecording || isPaused) return;
       try {
         final amp = await _recorder.getAmplitude();
         final db = amp.current.isFinite ? amp.current : -60.0;
@@ -311,18 +359,23 @@ class VoiceRecorderController {
   }
 
   int _currentDurationMs() {
-    if (_startedAt == null) return elapsed.inMilliseconds;
-    return DateTime.now().difference(_startedAt!).inMilliseconds;
+    if (isPaused || _startedAt == null) {
+      return _accumulatedBeforePause.inMilliseconds;
+    }
+    return _accumulatedBeforePause.inMilliseconds +
+        DateTime.now().difference(_startedAt!).inMilliseconds;
   }
 
   void _resetState() {
     isRecording = false;
+    isPaused = false;
     isLocked = false;
     isCanceling = false;
     elapsed = Duration.zero;
     dragDx = 0;
     dragDy = 0;
     _startedAt = null;
+    _accumulatedBeforePause = Duration.zero;
     _currentPath = null;
     _pointerStart = null;
   }
@@ -353,7 +406,7 @@ class VoiceRecordingBar extends StatelessWidget {
     if (controller.isLocked) {
       return Container(
         margin: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
           borderRadius: BorderRadius.circular(24),
@@ -371,7 +424,17 @@ class VoiceRecordingBar extends StatelessWidget {
                 color: Theme.of(context).colorScheme.error,
               ),
             ),
-            const _PulsingMicDot(),
+            if (controller.isPaused)
+              Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF59E0B),
+                  shape: BoxShape.circle,
+                ),
+              )
+            else
+              const _PulsingMicDot(),
             const SizedBox(width: 8),
             Text(
               DateFormatter.formatDuration(controller.elapsed),
@@ -381,11 +444,35 @@ class VoiceRecordingBar extends StatelessWidget {
                 fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _LiveWaveform(amplitudes: controller.liveAmplitudes),
-            ),
             const SizedBox(width: 10),
+            Expanded(
+              child: Opacity(
+                opacity: controller.isPaused ? 0.45 : 1.0,
+                child: _LiveWaveform(amplitudes: controller.liveAmplitudes),
+              ),
+            ),
+            const SizedBox(width: 6),
+            IconButton(
+              onPressed: controller.togglePauseResume,
+              tooltip: controller.isPaused
+                  ? 'Continuar gravação'
+                  : 'Pausar gravação',
+              style: IconButton.styleFrom(
+                backgroundColor: controller.isPaused
+                    ? AppColors.emerald.withValues(alpha: 0.16)
+                    : (isDark
+                        ? AppColors.darkSurfaceAlt
+                        : AppColors.lightSurfaceAlt),
+                foregroundColor: controller.isPaused
+                    ? AppColors.emerald
+                    : Theme.of(context).colorScheme.onSurface,
+              ),
+              icon: Icon(
+                controller.isPaused ? Icons.mic_rounded : Icons.pause_rounded,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 6),
             SizedBox(
               width: 44,
               height: 44,
@@ -480,32 +567,61 @@ class VoiceRecordingBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Transform.translate(
-            offset: Offset(controller.dragDx * 0.15, controller.dragDy * 0.35),
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: controller.isCanceling
-                    ? Theme.of(context).colorScheme.error
-                    : AppColors.emerald,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.emerald.withValues(alpha: 0.35),
-                    blurRadius: 12,
-                    spreadRadius: 2,
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!controller.isCanceling)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.darkSurfaceAlt
+                          : AppColors.lightSurface,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark
+                            ? AppColors.darkBorder
+                            : AppColors.lightBorder,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.lock_rounded,
+                      size: 13,
+                      color: secondaryText,
+                    ),
                   ),
-                ],
+                ),
+              Transform.translate(
+                offset:
+                    Offset(controller.dragDx * 0.15, controller.dragDy * 0.35),
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: controller.isCanceling
+                        ? Theme.of(context).colorScheme.error
+                        : AppColors.emerald,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.emerald.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    controller.isCanceling
+                        ? Icons.delete_rounded
+                        : Icons.mic_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
               ),
-              child: Icon(
-                controller.isCanceling
-                    ? Icons.delete_rounded
-                    : Icons.mic_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
+            ],
           ),
         ],
       ),

@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/services/chat_preferences_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../contacts/presentation/providers/contacts_providers.dart';
+import '../../../profile/presentation/providers/profile_providers.dart';
 import '../../domain/chat_message.dart';
 import '../../domain/chat_thread.dart';
 import '../providers/chats_providers.dart';
@@ -33,11 +36,16 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
     super.dispose();
   }
 
-  MessageStatus _parseThreadStatus(ChatThread thread) {
+  MessageStatus _parseThreadStatus(
+    ChatThread thread, {
+    required bool hideReadReceipts,
+  }) {
     if (thread.hasPendingWrites) return MessageStatus.sending;
     switch (thread.lastMessageStatus) {
       case 'read':
-        return MessageStatus.read;
+        return hideReadReceipts
+            ? MessageStatus.delivered
+            : MessageStatus.read;
       case 'delivered':
         return MessageStatus.delivered;
       default:
@@ -45,10 +53,88 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
     }
   }
 
+  void _showChatActionsSheet(
+    ChatThread chat,
+    String displayName,
+  ) {
+    final prefs = ref.read(chatPreferencesProvider);
+    final isPinned = prefs.isPinned(chat.chatId);
+    final isMuted = prefs.isMuted(chat.chatId);
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
+                child: Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(sheetCtx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: Icon(
+                  isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
+                ),
+                title: Text(
+                  isPinned ? 'Desafixar do topo' : 'Fixar no topo',
+                ),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  ref
+                      .read(chatPreferencesProvider.notifier)
+                      .setChatPinned(chat.chatId, !isPinned);
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  isMuted
+                      ? Icons.notifications_active_rounded
+                      : Icons.notifications_off_rounded,
+                ),
+                title: Text(
+                  isMuted ? 'Reativar notificações' : 'Silenciar conversa',
+                ),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  ref
+                      .read(chatPreferencesProvider.notifier)
+                      .setChatMuted(chat.chatId, !isMuted);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_rounded),
+                title: const Text('Ver perfil'),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  context.push('/chats/${chat.chatId}/profile');
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   IconData? _mediaPreviewIcon(ChatThread thread) {
     switch (thread.lastMessageType) {
       case MessageTypes.image:
         return Icons.photo_camera_rounded;
+      case MessageTypes.video:
+        return Icons.videocam_rounded;
+      case MessageTypes.file:
+        return Icons.insert_drive_file_rounded;
       case MessageTypes.audio:
         return Icons.mic_rounded;
       case MessageTypes.sticker:
@@ -61,6 +147,12 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
             trimmed == 'Foto' ||
             trimmed.startsWith('Foto:')) {
           return Icons.photo_camera_rounded;
+        }
+        if (trimmed == 'Vídeo' || trimmed.startsWith('Vídeo')) {
+          return Icons.videocam_rounded;
+        }
+        if (trimmed == 'Arquivo' || trimmed.startsWith('Arquivo:')) {
+          return Icons.insert_drive_file_rounded;
         }
         if (trimmed.startsWith('\u{1F3A4}') || trimmed.startsWith('Áudio ')) {
           return Icons.mic_rounded;
@@ -167,10 +259,9 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    Icons.people_rounded,
-                                    size: 42,
-                                    color: secondaryText,
+                                  const ZapiMascot(
+                                    mood: ZapiMascotMood.waiting,
+                                    size: 92,
                                   ),
                                   const SizedBox(height: 12),
                                   const Text(
@@ -265,6 +356,9 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
   Widget build(BuildContext context) {
     final myUid =
         ref.watch(authStateProvider.select((s) => s.value?.uid)) ?? '';
+    final myUser = ref.watch(currentUserProfileProvider).value;
+    final hideReadReceipts = myUser?.hideReadReceipts ?? false;
+    final prefs = ref.watch(chatPreferencesProvider);
     final chatsAsync = ref.watch(userChatsProvider);
     final contactsByUid = ref.watch(contactsByUidProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -316,8 +410,8 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
         bodyContent = const ZapiListSkeleton();
       }
     } else {
-      final visibleChats = normalizedQuery.isEmpty
-          ? chats
+      final filteredChats = normalizedQuery.isEmpty
+          ? List<ChatThread>.from(chats)
           : chats.where((chat) {
               final otherUid = chat.otherParticipantUid(myUid);
               final savedContact = contactsByUid[otherUid];
@@ -335,6 +429,16 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
                   chat.lastMessage.toLowerCase().contains(normalizedQuery);
             }).toList();
 
+      filteredChats.sort((a, b) {
+        final aPinned = prefs.isPinned(a.chatId);
+        final bPinned = prefs.isPinned(b.chatId);
+        if (aPinned != bPinned) return aPinned ? -1 : 1;
+        final aTime = a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime);
+      });
+      final visibleChats = filteredChats;
+
       if (visibleChats.isEmpty) {
         bodyContent = Center(
           child: Padding(
@@ -342,22 +446,13 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    color: AppColors.emerald.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    normalizedQuery.isNotEmpty
-                        ? Icons.search_off_rounded
-                        : Icons.forum_rounded,
-                    size: 38,
-                    color: AppColors.emerald,
-                  ),
+                ZapiMascot(
+                  mood: normalizedQuery.isNotEmpty
+                      ? ZapiMascotMood.excited
+                      : ZapiMascotMood.waiting,
+                  size: 106,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
                 Text(
                   normalizedQuery.isNotEmpty
                       ? 'Nenhuma conversa encontrada'
@@ -402,6 +497,9 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
             final unread = chat.unreadFor(myUid);
             final isTyping = chat.isTyping(otherUid);
             final sentByMe = chat.lastMessageSenderId == myUid;
+            final isPinned = prefs.isPinned(chat.chatId);
+            final isMuted = prefs.isMuted(chat.chatId);
+            final draft = prefs.draftFor(chat.chatId);
 
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(
@@ -464,14 +562,17 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
                       ),
                     Row(
                       children: [
-                        if (!isTyping && sentByMe) ...[
+                        if (!isTyping && draft.isEmpty && sentByMe) ...[
                           MessageStatusIcon(
-                            status: _parseThreadStatus(chat),
+                            status: _parseThreadStatus(
+                              chat,
+                              hideReadReceipts: hideReadReceipts,
+                            ),
                             size: 16,
                           ),
                           const SizedBox(width: 4),
                         ],
-                        if (!isTyping) ...[
+                        if (!isTyping && draft.isEmpty) ...[
                           Builder(
                             builder: (context) {
                               final icon = _mediaPreviewIcon(chat);
@@ -488,25 +589,71 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
                           ),
                         ],
                         Expanded(
-                          child: Text(
-                            isTyping
-                                ? 'digitando...'
-                                : _cleanLastMessageLabel(chat.lastMessage),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: isTyping
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                              color: isTyping
-                                  ? (isDark
-                                      ? AppColors.emeraldBright
-                                      : AppColors.emeraldDark)
-                                  : secondaryText,
-                            ),
-                          ),
+                          child: isTyping
+                              ? Text(
+                                  'digitando...',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? AppColors.emeraldBright
+                                        : AppColors.emeraldDark,
+                                  ),
+                                )
+                              : draft.isNotEmpty
+                                  ? Text.rich(
+                                      TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text: 'Rascunho: ',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark
+                                                  ? AppColors.emeraldBright
+                                                  : AppColors.emeraldDark,
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: draft.replaceAll('\n', ' '),
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: secondaryText,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    )
+                                  : Text(
+                                      _cleanLastMessageLabel(chat.lastMessage),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: secondaryText,
+                                      ),
+                                    ),
                         ),
+                        if (isMuted) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.notifications_off_rounded,
+                            size: 15,
+                            color: secondaryText,
+                          ),
+                        ],
+                        if (isPinned) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.push_pin_rounded,
+                            size: 15,
+                            color: secondaryText,
+                          ),
+                        ],
                         if (unread > 0) ...[
                           const SizedBox(width: 8),
                           Container(
@@ -536,6 +683,7 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
                 ),
               ),
               onTap: () => context.push('/chats/${chat.chatId}'),
+              onLongPress: () => _showChatActionsSheet(chat, displayName),
             );
           },
         );

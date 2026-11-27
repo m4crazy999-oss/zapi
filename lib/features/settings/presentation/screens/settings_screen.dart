@@ -4,14 +4,19 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../../core/services/app_update_service.dart';
+import '../../../../core/services/chat_preferences_service.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../core/utils/zapi_toast.dart';
+import '../../../../core/widgets/chat_wallpaper.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../profile/presentation/providers/profile_providers.dart';
+import '../widgets/app_lock_sheet.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -82,6 +87,100 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         .requestIgnoreBatteryOptimizations();
   }
 
+  Future<void> _setShowLastSeen(bool visible) async {
+    try {
+      final hide = !visible;
+      await ref
+          .read(profileControllerProvider.notifier)
+          .updatePrivacy(hideLastSeen: hide);
+      await ref.read(presenceServiceProvider).setHideLastSeen(hide);
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      ZapiToast.showError(
+        context,
+        'Não foi possível atualizar sua privacidade agora.',
+      );
+    }
+  }
+
+  Future<void> _setShowReadReceipts(bool visible) async {
+    try {
+      await ref
+          .read(profileControllerProvider.notifier)
+          .updatePrivacy(hideReadReceipts: !visible);
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      ZapiToast.showError(
+        context,
+        'Não foi possível atualizar sua privacidade agora.',
+      );
+    }
+  }
+
+  Future<void> _openWallpaperPicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        return Consumer(
+          builder: (context, sheetRef, _) {
+            final selected = sheetRef.watch(chatWallpaperProvider);
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Fundo das conversas',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: ChatWallpaperPreset.all.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 14,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.25,
+                      ),
+                      itemBuilder: (context, index) {
+                        final preset = ChatWallpaperPreset.all[index];
+                        return ChatWallpaperSwatch(
+                          preset: preset,
+                          selected: preset.id == selected.id,
+                          onTap: () {
+                            sheetRef
+                                .read(appearanceProvider.notifier)
+                                .setWallpaper(preset.id);
+                            Navigator.pop(sheetCtx);
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _openChangePasswordDialog() async {
     final result = await showDialog<({String current, String next})>(
       context: context,
@@ -96,26 +195,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             currentPassword: result.current,
             newPassword: result.next,
           );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Senha alterada com sucesso!')),
-      );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível alterar sua senha agora.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, 'Não foi possível alterar sua senha agora.');
     }
   }
 
@@ -134,28 +219,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     try {
       await ref.read(authControllerProvider.notifier).sendPasswordReset(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Link de recuperação enviado para $email (confira também o Spam).',
-          ),
-        ),
+      ZapiToast.showInfo(
+        context,
+        'Link de recuperação enviado para $email (confira também o Spam).',
       );
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível enviar o link de recuperação.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      ZapiToast.showError(
+        context,
+        'Não foi possível enviar o link de recuperação.',
       );
     }
   }
@@ -187,20 +262,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       await ref.read(authControllerProvider.notifier).signOut();
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível sair da conta agora.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, 'Não foi possível sair da conta agora.');
     }
   }
 
@@ -218,19 +283,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           .deleteAccount(confirmedPassword);
     } on AppException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      ZapiToast.showError(context, e.message);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Não foi possível excluir sua conta agora.'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
+      ZapiToast.showError(
+        context,
+        'Não foi possível excluir sua conta agora.',
       );
     }
   }
@@ -238,9 +296,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(currentUserProfileProvider);
+    final currentUser = profileAsync.value;
     final versionLabel =
         ref.watch(appVersionLabelProvider).value ?? '1.0.0';
     final themeMode = ref.watch(themeModeProvider);
+    final wallpaper = ref.watch(chatWallpaperProvider);
+    final chatPrefs = ref.watch(chatPreferencesProvider);
     final isAuthBusy = ref.watch(authControllerProvider).isLoading;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
@@ -349,63 +410,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 },
               ),
               const SizedBox(height: 20),
-              _SectionTitle(label: 'Preferências', color: secondaryText),
+              _SectionTitle(label: 'Aparência', color: secondaryText),
               Card(
                 child: Column(
                   children: [
-                    ListTile(
-                      leading: Icon(
-                        _notificationsEnabled
-                            ? Icons.notifications_active_rounded
-                            : Icons.notifications_off_rounded,
-                        color: _notificationsEnabled
-                            ? accent
-                            : Theme.of(context).colorScheme.error,
-                      ),
-                      title: const Text('Notificações'),
-                      subtitle: Text(
-                        _notificationsEnabled
-                            ? 'Ativadas para novas mensagens'
-                            : 'Desativadas — toque para ativar',
-                      ),
-                      trailing: Icon(
-                        Icons.chevron_right_rounded,
-                        color: secondaryText,
-                      ),
-                      onTap: _handleNotificationsTap,
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      secondary: Icon(
-                        Icons.mark_chat_unread_rounded,
-                        color: accent,
-                      ),
-                      title: const Text('Alertas com o app fechado'),
-                      subtitle: const Text(
-                        'Mantém o aviso de novas mensagens sempre ativo.',
-                      ),
-                      value: _backgroundModeEnabled,
-                      onChanged: _toggleBackgroundMode,
-                    ),
-                    if (!_ignoringBattery) ...[
-                      const Divider(height: 1),
-                      ListTile(
-                        leading: Icon(
-                          Icons.battery_saver_rounded,
-                          color: accent,
-                        ),
-                        title: const Text('Receber avisos com a tela apagada'),
-                        subtitle: const Text(
-                          'Evita atrasos quando o celular economiza energia.',
-                        ),
-                        trailing: Icon(
-                          Icons.chevron_right_rounded,
-                          color: secondaryText,
-                        ),
-                        onTap: _requestBatteryExemption,
-                      ),
-                    ],
-                    const Divider(height: 1),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                       child: Column(
@@ -454,13 +462,175 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                               selected: {themeMode},
                               onSelectionChanged: (selection) {
                                 ref
-                                    .read(themeModeProvider.notifier)
+                                    .read(appearanceProvider.notifier)
                                     .setThemeMode(selection.first);
                               },
                             ),
                           ),
                         ],
                       ),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: Icon(Icons.wallpaper_rounded, color: accent),
+                      title: const Text('Fundo das conversas'),
+                      subtitle: Text(wallpaper.name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: wallpaper.previewAccent,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isDark
+                                    ? AppColors.darkBorder
+                                    : AppColors.lightBorder,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: secondaryText,
+                          ),
+                        ],
+                      ),
+                      onTap: _openWallpaperPicker,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              _SectionTitle(label: 'Notificações', color: secondaryText),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        _notificationsEnabled
+                            ? Icons.notifications_active_rounded
+                            : Icons.notifications_off_rounded,
+                        color: _notificationsEnabled
+                            ? accent
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                      title: const Text('Permissão no celular'),
+                      subtitle: Text(
+                        _notificationsEnabled
+                            ? 'Ativadas para novas mensagens'
+                            : 'Desativadas — toque para ativar',
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        color: secondaryText,
+                      ),
+                      onTap: _handleNotificationsTap,
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      secondary: Icon(Icons.volume_up_rounded, color: accent),
+                      title: const Text('Som nas notificações'),
+                      subtitle: const Text(
+                        'Tocar som ao receber novas mensagens',
+                      ),
+                      value: chatPrefs.notifSoundEnabled,
+                      onChanged: (value) => ref
+                          .read(chatPreferencesProvider.notifier)
+                          .setNotificationSound(value),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      secondary: Icon(Icons.vibration_rounded, color: accent),
+                      title: const Text('Vibração'),
+                      subtitle: const Text(
+                        'Vibrar ao receber novas mensagens',
+                      ),
+                      value: chatPrefs.notifVibrationEnabled,
+                      onChanged: (value) => ref
+                          .read(chatPreferencesProvider.notifier)
+                          .setNotificationVibration(value),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      secondary: Icon(
+                        Icons.mark_chat_unread_rounded,
+                        color: accent,
+                      ),
+                      title: const Text('Alertas com o app fechado'),
+                      subtitle: const Text(
+                        'Mantém o aviso de novas mensagens sempre ativo.',
+                      ),
+                      value: _backgroundModeEnabled,
+                      onChanged: _toggleBackgroundMode,
+                    ),
+                    if (!_ignoringBattery) ...[
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: Icon(
+                          Icons.battery_saver_rounded,
+                          color: accent,
+                        ),
+                        title: const Text('Receber avisos com a tela apagada'),
+                        subtitle: const Text(
+                          'Evita atrasos quando o celular economiza energia.',
+                        ),
+                        trailing: Icon(
+                          Icons.chevron_right_rounded,
+                          color: secondaryText,
+                        ),
+                        onTap: _requestBatteryExemption,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              _SectionTitle(
+                label: 'Privacidade e segurança',
+                color: secondaryText,
+              ),
+              Card(
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      secondary: Icon(Icons.visibility_rounded, color: accent),
+                      title: const Text('Visto por último e online'),
+                      subtitle: const Text(
+                        'Mostra quando você está online ou ativo recentemente.',
+                      ),
+                      value: !(currentUser?.hideLastSeen ?? false),
+                      onChanged: currentUser == null ? null : _setShowLastSeen,
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      secondary: Icon(Icons.done_all_rounded, color: accent),
+                      title: const Text('Confirmação de leitura'),
+                      subtitle: const Text(
+                        'Envia e exibe quando as mensagens foram lidas.',
+                      ),
+                      value: !(currentUser?.hideReadReceipts ?? false),
+                      onChanged:
+                          currentUser == null ? null : _setShowReadReceipts,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: Icon(Icons.lock_rounded, color: accent),
+                      title: const Text('Bloqueio do app'),
+                      subtitle: Text(
+                        chatPrefs.hasAppLockConfigured
+                            ? (chatPrefs.appLockUseDeviceBiometric
+                                ? 'Ativo com PIN e biometria'
+                                : 'Ativo com PIN de 4 dígitos')
+                            : 'Desativado',
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        color: secondaryText,
+                      ),
+                      onTap: () => AppLockSheet.show(context),
                     ),
                   ],
                 ),
