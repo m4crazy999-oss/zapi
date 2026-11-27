@@ -107,6 +107,48 @@ class MediaProcessor {
     );
   }
 
+  /// Prepara imagem para Status respeitando o limite de 450 KB (compatível com Firestore gratuito).
+  static Future<Uint8List> prepareStatusPhoto(String sourcePath) async {
+    final sourceFile = File(sourcePath);
+    if (!await sourceFile.exists()) {
+      throw const AppException('Arquivo de imagem não encontrado.');
+    }
+
+    final rawBytes = await sourceFile.readAsBytes();
+    final compressed = await Isolate.run(() => _encodeStatusImageInIsolate(rawBytes));
+    if (compressed == null ||
+        compressed.length > AppConstants.maxStatusImageBytes ||
+        base64Encode(compressed).length > AppConstants.maxStatusImageBase64Chars) {
+      throw const AppException(
+        'A foto selecionada ficou pesada demais para o Status. Escolha outra imagem.',
+      );
+    }
+    return compressed;
+  }
+
+  static Uint8List? _encodeStatusImageInIsolate(Uint8List rawBytes) {
+    final decoded = img.decodeImage(rawBytes);
+    if (decoded == null) return null;
+
+    final baked = img.bakeOrientation(decoded);
+    const maxSides = [1280, 1080, 920, 760, 620];
+    const qualities = [80, 68, 56, 44, 32];
+
+    for (var i = 0; i < maxSides.length; i++) {
+      final resized = _resizeKeepingAspect(baked, maxSide: maxSides[i]);
+      resized.exif.clear();
+      final candidate = Uint8List.fromList(
+        img.encodeJpg(resized, quality: qualities[i]),
+      );
+      if (candidate.length <= AppConstants.maxStatusImageBytes &&
+          base64Encode(candidate).length <=
+              AppConstants.maxStatusImageBase64Chars) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
   /// Converte imagem recortada em figurinha WebP 512x512 abaixo de 100 KB,
   /// com transparência circular opcional.
   static Future<ProcessedStickerResult> prepareSticker(

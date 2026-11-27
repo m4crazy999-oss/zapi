@@ -92,7 +92,7 @@ class _ImagePreviewScreenState extends State<ImagePreviewScreen> {
             IconButton(
               onPressed: _removeCurrent,
               tooltip: 'Remover esta foto',
-              icon: const Icon(Icons.delete_outline_rounded),
+              icon: const Icon(Icons.delete_rounded),
             ),
         ],
       ),

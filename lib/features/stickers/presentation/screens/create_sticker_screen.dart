@@ -222,7 +222,7 @@ class _CreateStickerScreenState extends ConsumerState<CreateStickerScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline_rounded, size: 18, color: secondaryText),
+                Icon(Icons.info_rounded, size: 18, color: secondaryText),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(

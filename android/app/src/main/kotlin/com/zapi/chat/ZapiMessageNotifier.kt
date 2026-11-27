@@ -33,8 +33,6 @@ object ZapiMessageNotifier {
 
     private const val PREFS_NAME = "zapi_bg_prefs"
     private const val KEY_BG_ENABLED = "bg_enabled"
-    private const val KEY_IS_FOREGROUND = "is_foreground"
-    private const val KEY_ACTIVE_CHAT_ID = "active_chat_id"
     private const val KEY_LAST_NOTIFIED_PREFIX = "last_notified_"
 
     @Volatile
@@ -55,29 +53,23 @@ object ZapiMessageNotifier {
     }
 
     fun isAppForeground(context: Context): Boolean {
-        return isAppForegroundVolatile || prefs(context).getBoolean(KEY_IS_FOREGROUND, false)
+        return isAppForegroundVolatile
     }
 
     fun setAppForeground(context: Context, isForeground: Boolean) {
         isAppForegroundVolatile = isForeground
-        prefs(context).edit().putBoolean(KEY_IS_FOREGROUND, isForeground).apply()
     }
 
     fun getActiveChatId(context: Context): String? {
-        return activeChatIdVolatile ?: prefs(context).getString(KEY_ACTIVE_CHAT_ID, null)
+        return activeChatIdVolatile
     }
 
     fun setActiveChatId(context: Context, chatId: String?) {
         activeChatIdVolatile = chatId
-        val editor = prefs(context).edit()
-        if (chatId.isNullOrEmpty()) {
-            editor.remove(KEY_ACTIVE_CHAT_ID)
-        } else {
-            editor.putString(KEY_ACTIVE_CHAT_ID, chatId)
+        if (!chatId.isNullOrEmpty()) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             manager?.cancel(chatId.hashCode())
         }
-        editor.apply()
     }
 
     fun markMessageNotified(context: Context, chatId: String, messageId: String) {

@@ -495,7 +495,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Seu perfil ainda não foi inicializado no servidor.',
+                        'Seu perfil ainda está sendo preparado.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
@@ -551,27 +551,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   alignment: Alignment.bottomCenter,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
+                      padding: const EdgeInsets.only(bottom: 44),
                       child: ProfileBanner(
                         bannerBase64: user.bannerBase64,
-                        height: 236 + topPadding,
+                        height: 176 + topPadding,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).scaffoldBackgroundColor,
-                        shape: BoxShape.circle,
-                      ),
-                      child: ZapiAvatar(
-                        displayName: user.displayName,
-                        photoBase64: user.photoBase64,
-                        photoUrl: user.photoUrl,
-                        radius: 52,
-                        showEditBadge: true,
-                        isLoading: _isUploadingPhoto,
-                        onTap: () => _showPhotoOptions(user),
-                      ),
+                    ZapiAvatar(
+                      displayName: user.displayName,
+                      photoBase64: user.photoBase64,
+                      photoUrl: user.photoUrl,
+                      radius: 52,
+                      showEditBadge: true,
+                      isLoading: _isUploadingPhoto,
+                      onTap: () => _showPhotoOptions(user),
                     ),
                   ],
                 ),
@@ -679,7 +672,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       const SizedBox(height: 6),
                                       Text(
                                         _idSyncError ??
-                                            'Seu código ZP-... ainda não foi gravado no servidor. Enquanto isso, outras pessoas podem adicionar você usando @${user.username}.',
+                                            'Seu código ZP-... ainda não foi gerado. Enquanto isso, outras pessoas podem adicionar você usando @${user.username}.',
                                         style: TextStyle(
                                           fontSize: 12.5,
                                           color: _idSyncError != null

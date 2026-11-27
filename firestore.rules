@@ -202,7 +202,7 @@ service cloud.firestore {
           && contactUid != uid
           && request.resource.data.keys().hasOnly([
             'contactUid', 'nickname', 'displayName', 'username',
-            'photoBase64', 'photoUrl', 'about', 'addedAt'
+            'photoBase64', 'photoUrl', 'about', 'isFavorite', 'addedAt'
           ])
           && request.resource.data.contactUid == contactUid
           && (request.resource.data.nickname == null || request.resource.data.nickname is string)
@@ -211,6 +211,7 @@ service cloud.firestore {
           && isValidProfilePhotoBase64(request.resource.data.get('photoBase64', null))
           && (request.resource.data.get('photoUrl', null) == null || request.resource.data.photoUrl is string)
           && request.resource.data.about is string
+          && (!('isFavorite' in request.resource.data) || request.resource.data.isFavorite is bool)
           && request.resource.data.addedAt is timestamp;
 
         // Permite remover contato exclusivamente pelo dono da agenda.
@@ -393,6 +394,67 @@ service cloud.firestore {
 
         // Impede remoção física de documentos de mensagem (exclusão usa deletedFor ou deletedForEveryone).
         allow delete: if false;
+      }
+    }
+
+    // Status temporários (24h) com controle de quem pode visualizar e registro de visualizações.
+    match /statuses/{statusId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || request.auth.uid in resource.data.get('allowedUids', [])
+        );
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly([
+          'id', 'ownerUid', 'ownerName', 'ownerUsername', 'ownerPhotoBase64',
+          'type', 'text', 'backgroundColor', 'imageBase64', 'privacyMode',
+          'allowedUids', 'createdAt', 'expiresAt'
+        ])
+        && request.resource.data.id == statusId
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerName is string
+        && request.resource.data.ownerUsername is string
+        && isValidProfilePhotoBase64(request.resource.data.get('ownerPhotoBase64', null))
+        && request.resource.data.type in ['text', 'image']
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 500
+        && request.resource.data.backgroundColor is int
+        && (
+          request.resource.data.get('imageBase64', null) == null
+          || (
+            request.resource.data.imageBase64 is string
+            && request.resource.data.imageBase64.size() <= 620000
+          )
+        )
+        && request.resource.data.privacyMode in ['all', 'favorites', 'custom']
+        && request.resource.data.allowedUids is list
+        && request.resource.data.allowedUids.size() <= 500
+        && request.auth.uid in request.resource.data.allowedUids
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.expiresAt is timestamp;
+
+      allow update: if false;
+
+      allow delete: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid;
+
+      match /views/{viewerUid} {
+        allow read: if isSignedIn()
+          && get(/databases/$(database)/documents/statuses/$(statusId)).data.ownerUid == request.auth.uid;
+
+        allow create, update: if isOwner(viewerUid)
+          && request.auth.uid in get(/databases/$(database)/documents/statuses/$(statusId)).data.get('allowedUids', [])
+          && request.resource.data.keys().hasOnly([
+            'viewerUid', 'viewerName', 'viewerPhotoBase64', 'viewedAt'
+          ])
+          && request.resource.data.viewerUid == request.auth.uid
+          && request.resource.data.viewerName is string
+          && isValidProfilePhotoBase64(request.resource.data.get('viewerPhotoBase64', null))
+          && request.resource.data.viewedAt is timestamp;
+
+        allow delete: if isSignedIn()
+          && get(/databases/$(database)/documents/statuses/$(statusId)).data.ownerUid == request.auth.uid;
       }
     }
 

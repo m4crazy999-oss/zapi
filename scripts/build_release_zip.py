@@ -20,6 +20,7 @@ EXCLUDE_DIRS = {
     "node_modules",
     "__pycache__",
     ".idea",
+    "zapi-server",
 }
 
 EXCLUDE_FILES = {
@@ -28,6 +29,8 @@ EXCLUDE_FILES = {
     "google-services.json",
     "key.properties",
     "zapi-release.jks",
+    "serviceAccountKey.json",
+    ".env",
 }
 
 README_CONTENT = """Zapi Android — Pacote pronto para GitHub Actions -> APK
@@ -48,9 +51,11 @@ def should_skip(rel_path: pathlib.PurePosixPath) -> bool:
     for part in rel_path.parts:
         if part in EXCLUDE_DIRS:
             return True
-    if rel_path.name in EXCLUDE_FILES:
+    if rel_path.name in EXCLUDE_FILES or rel_path.name.startswith(".env."):
         return True
-    if rel_path.suffix in {".jks", ".keystore", ".apk", ".aab"}:
+    if rel_path.name.startswith("serviceAccount") and rel_path.suffix == ".json":
+        return True
+    if rel_path.suffix in {".jks", ".keystore", ".apk", ".aab", ".p12", ".pem"}:
         return True
     return False
 
@@ -126,7 +131,7 @@ def build_zip(version_tag: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Empacotar projeto Zapi em ZIP para GitHub Actions")
-    parser.add_argument("--version", default="etapa-3", help="Identificador da versão (ex.: etapa-3, etapa-4)")
+    parser.add_argument("--version", default="etapa-6", help="Identificador da versão (ex.: etapa-6)")
     args = parser.parse_args()
     build_zip(args.version)
 

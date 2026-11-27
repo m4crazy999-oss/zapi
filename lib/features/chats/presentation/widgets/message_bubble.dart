@@ -759,6 +759,19 @@ class _AudioBubbleContentState extends ConsumerState<_AudioBubbleContent> {
   @override
   Widget build(BuildContext context) {
     final message = widget.message;
+    ref.listen<String?>(
+      audioPlaybackProvider.select((s) => s.errorMessage),
+      (_, nextError) {
+        if (!mounted || nextError == null) return;
+        final currentActive = ref.read(audioPlaybackProvider).activeMessageId;
+        if (currentActive == message.id) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(nextError)),
+          );
+          ref.read(audioPlaybackProvider.notifier).clearError();
+        }
+      },
+    );
     final playback = ref.watch(audioPlaybackProvider);
     final isActive = playback.activeMessageId == message.id;
     final totalDuration = isActive && playback.duration > Duration.zero

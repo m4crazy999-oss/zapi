@@ -157,7 +157,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                         child: Row(
                           children: [
                             Icon(
-                              Icons.info_outline_rounded,
+                              Icons.info_rounded,
                               color: Theme.of(context).colorScheme.error,
                             ),
                             const SizedBox(width: 12),

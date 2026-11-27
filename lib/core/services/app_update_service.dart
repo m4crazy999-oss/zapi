@@ -25,6 +25,20 @@ class UpdateNoteItem {
   final String text;
 }
 
+class ReleaseChangelogEntry {
+  const ReleaseChangelogEntry({
+    required this.versionLabel,
+    required this.buildNumber,
+    required this.title,
+    required this.notes,
+  });
+
+  final String versionLabel;
+  final int buildNumber;
+  final String title;
+  final List<UpdateNoteItem> notes;
+}
+
 class AppReleaseUpdate {
   const AppReleaseUpdate({
     required this.versionLabel,
@@ -35,6 +49,7 @@ class AppReleaseUpdate {
     required this.notes,
     required this.apkDownloadUrl,
     required this.apkFileName,
+    this.releaseHistory = const [],
   });
 
   final String versionLabel;
@@ -45,6 +60,7 @@ class AppReleaseUpdate {
   final List<UpdateNoteItem> notes;
   final String apkDownloadUrl;
   final String apkFileName;
+  final List<ReleaseChangelogEntry> releaseHistory;
 }
 
 class AppUpdateService {
@@ -58,8 +74,19 @@ class AppUpdateService {
               ),
             );
 
+  static const String _releasesEndpoint =
+      'https://api.github.com/repos/m4crazy999-oss/zapi/releases';
   static const String _latestReleaseEndpoint =
       'https://api.github.com/repos/m4crazy999-oss/zapi/releases/latest';
+  static const int _maxPagesToFetch = 5;
+  static const int _pageSize = 100;
+
+  static const Map<String, String> _requestHeaders = {
+    'Accept': 'application/vnd.github+json',
+    'Cache-Control': 'no-cache, no-store',
+    'Pragma': 'no-cache',
+    'User-Agent': 'Zapi-Android-App',
+  };
 
   final Dio _dio;
   bool _isChecking = false;
@@ -73,7 +100,8 @@ class AppUpdateService {
   }
 
   /// Verifica imediatamente na abertura e no retorno ao primeiro plano se há
-  /// uma versão mais nova publicada no repositório.
+  /// uma versão mais nova publicada no repositório e acumula todas as notas
+  /// das atualizações anteriores que o usuário ainda não baixou.
   Future<AppReleaseUpdate?> checkForUpdate({bool throwOnError = false}) async {
     if (_isChecking) return null;
     _isChecking = true;
@@ -86,60 +114,51 @@ class AppUpdateService {
           : '1.0.$currentBuild';
 
       final cacheBuster = DateTime.now().millisecondsSinceEpoch;
-      final response = await _dio.get<Map<String, dynamic>>(
-        '$_latestReleaseEndpoint?t=$cacheBuster',
-        options: Options(
-          headers: const {
-            'Accept': 'application/vnd.github+json',
-            'Cache-Control': 'no-cache, no-store',
-            'Pragma': 'no-cache',
-            'User-Agent': 'Zapi-Android-App',
-          },
-        ),
+      var releases = await _fetchPublishedReleases(
+        currentBuild: currentBuild,
+        cacheBuster: cacheBuster,
       );
 
-      final data = response.data;
-      if (data == null) return null;
-
-      final tagName = (data['tag_name'] as String?)?.trim() ?? '';
-      final remoteBuild = _extractBuildNumber(tagName);
-      if (remoteBuild == null || remoteBuild <= currentBuild) {
-        return null;
-      }
-
-      final assets = data['assets'];
-      String? apkUrl;
-      String apkName = 'zapi-$tagName.apk';
-
-      if (assets is List) {
-        for (final rawAsset in assets) {
-          if (rawAsset is! Map) continue;
-          final name = (rawAsset['name'] as String?)?.trim() ?? '';
-          final url = (rawAsset['browser_download_url'] as String?)?.trim() ?? '';
-          if (name.toLowerCase().endsWith('.apk') && _isSafeHttpsUrl(url)) {
-            apkUrl = url;
-            apkName = name;
-            break;
-          }
+      if (releases.isEmpty) {
+        final latestFallback = await _fetchLatestFallback(cacheBuster);
+        if (latestFallback != null) {
+          releases = [latestFallback];
         }
       }
 
-      if (apkUrl == null) {
-        return null;
+      if (releases.isEmpty) return null;
+
+      final newerReleases = releases
+          .where((item) => item.buildNumber > currentBuild)
+          .toList()
+        ..sort((a, b) => b.buildNumber.compareTo(a.buildNumber));
+
+      _ParsedGitHubRelease? targetRelease;
+      for (final candidate in newerReleases) {
+        if (candidate.apkDownloadUrl != null) {
+          targetRelease = candidate;
+          break;
+        }
       }
 
-      final body = (data['body'] as String?) ?? '';
-      final parsed = _parseReleaseBody(body);
+      if (targetRelease == null) return null;
+
+      final missedReleases = newerReleases
+          .where((item) => item.buildNumber <= targetRelease!.buildNumber)
+          .toList();
+
+      final aggregated = buildCumulativeChangelog(missedReleases);
 
       return AppReleaseUpdate(
-        versionLabel: _formatVersionLabel(tagName),
-        remoteBuildNumber: remoteBuild,
+        versionLabel: targetRelease.versionLabel,
+        remoteBuildNumber: targetRelease.buildNumber,
         currentBuildNumber: currentBuild,
         currentVersionLabel: currentVersionLabel,
-        title: parsed.title,
-        notes: parsed.notes,
-        apkDownloadUrl: apkUrl,
-        apkFileName: _sanitizeFileName(apkName),
+        title: aggregated.title,
+        notes: aggregated.notes,
+        apkDownloadUrl: targetRelease.apkDownloadUrl!,
+        apkFileName: _sanitizeFileName(targetRelease.apkFileName),
+        releaseHistory: aggregated.history,
       );
     } catch (_) {
       if (throwOnError) {
@@ -151,6 +170,148 @@ class AppUpdateService {
     } finally {
       _isChecking = false;
     }
+  }
+
+  Future<List<_ParsedGitHubRelease>> _fetchPublishedReleases({
+    required int currentBuild,
+    required int cacheBuster,
+  }) async {
+    final collected = <_ParsedGitHubRelease>[];
+
+    try {
+      for (var page = 1; page <= _maxPagesToFetch; page += 1) {
+        final response = await _dio.get<List<dynamic>>(
+          '$_releasesEndpoint?per_page=$_pageSize&page=$page&t=$cacheBuster',
+          options: Options(headers: _requestHeaders),
+        );
+
+        final rawList = response.data;
+        if (rawList == null || rawList.isEmpty) break;
+
+        var lowestBuildOnPage = -1;
+        for (final rawItem in rawList) {
+          if (rawItem is! Map) continue;
+          final parsed = _parseGitHubRelease(rawItem);
+          if (parsed == null) continue;
+          collected.add(parsed);
+          if (lowestBuildOnPage == -1 ||
+              parsed.buildNumber < lowestBuildOnPage) {
+            lowestBuildOnPage = parsed.buildNumber;
+          }
+        }
+
+        if (rawList.length < _pageSize) break;
+        if (lowestBuildOnPage != -1 && lowestBuildOnPage <= currentBuild) {
+          break;
+        }
+      }
+    } catch (_) {
+      // Se /releases falhar, o chamador faz fallback para /releases/latest.
+    }
+
+    return collected;
+  }
+
+  Future<_ParsedGitHubRelease?> _fetchLatestFallback(int cacheBuster) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '$_latestReleaseEndpoint?t=$cacheBuster',
+      options: Options(headers: _requestHeaders),
+    );
+
+    final data = response.data;
+    if (data == null) return null;
+    return _parseGitHubRelease(data);
+  }
+
+  _ParsedGitHubRelease? _parseGitHubRelease(Map<dynamic, dynamic> data) {
+    if (data['draft'] == true || data['prerelease'] == true) return null;
+
+    final tagName = (data['tag_name'] as String?)?.trim() ?? '';
+    final buildNumber = _extractBuildNumber(tagName);
+    if (buildNumber == null) return null;
+
+    final assets = data['assets'];
+    String? apkUrl;
+    var apkName = 'zapi-$tagName.apk';
+
+    if (assets is List) {
+      for (final rawAsset in assets) {
+        if (rawAsset is! Map) continue;
+        final name = (rawAsset['name'] as String?)?.trim() ?? '';
+        final url = (rawAsset['browser_download_url'] as String?)?.trim() ?? '';
+        if (name.toLowerCase().endsWith('.apk') && _isSafeHttpsUrl(url)) {
+          apkUrl = url;
+          apkName = name;
+          break;
+        }
+      }
+    }
+
+    final body = (data['body'] as String?) ?? '';
+    return _ParsedGitHubRelease(
+      versionLabel: _formatVersionLabel(tagName),
+      buildNumber: buildNumber,
+      body: body,
+      apkDownloadUrl: apkUrl,
+      apkFileName: apkName,
+    );
+  }
+
+  /// Combina todas as versões perdidas (ordenadas da mais recente para a mais
+  /// antiga) preservando todas as notas únicas acumuladas no período.
+  _CumulativeChangelog buildCumulativeChangelog(
+    List<_ParsedGitHubRelease> missedReleases,
+  ) {
+    final sorted = [...missedReleases]
+      ..sort((a, b) => b.buildNumber.compareTo(a.buildNumber));
+
+    final seenKeys = <String>{};
+    final history = <ReleaseChangelogEntry>[];
+    final flatNotes = <UpdateNoteItem>[];
+    String? primaryTitle;
+
+    for (final release in sorted) {
+      final parsed = _parseReleaseBody(release.body);
+      primaryTitle ??= parsed.title;
+
+      final uniqueForRelease = <UpdateNoteItem>[];
+      for (final note in parsed.notes) {
+        final key = '${note.type.name}:${note.text.trim().toLowerCase()}';
+        if (seenKeys.add(key)) {
+          uniqueForRelease.add(note);
+        }
+      }
+
+      if (uniqueForRelease.isEmpty && parsed.notes.isEmpty) {
+        final titleText = parsed.title.trim();
+        if (titleText.isNotEmpty) {
+          final fallbackKey = 'other:${titleText.toLowerCase()}';
+          if (seenKeys.add(fallbackKey)) {
+            uniqueForRelease.add(
+              UpdateNoteItem(type: UpdateNoteType.other, text: titleText),
+            );
+          }
+        }
+      }
+
+      if (uniqueForRelease.isNotEmpty) {
+        history.add(
+          ReleaseChangelogEntry(
+            versionLabel: release.versionLabel,
+            buildNumber: release.buildNumber,
+            title: parsed.title,
+            notes: uniqueForRelease,
+          ),
+        );
+        flatNotes.addAll(uniqueForRelease);
+      }
+    }
+
+    return _CumulativeChangelog(
+      title: primaryTitle ?? 'Novidades e melhorias no Zapi',
+      notes: flatNotes,
+      history: history,
+    );
   }
 
   /// Baixa o arquivo de atualização para a pasta temporária do app.
@@ -293,6 +454,22 @@ class AppUpdateService {
   }
 }
 
+class _ParsedGitHubRelease {
+  const _ParsedGitHubRelease({
+    required this.versionLabel,
+    required this.buildNumber,
+    required this.body,
+    required this.apkDownloadUrl,
+    required this.apkFileName,
+  });
+
+  final String versionLabel;
+  final int buildNumber;
+  final String body;
+  final String? apkDownloadUrl;
+  final String apkFileName;
+}
+
 class _ParsedReleaseNotes {
   const _ParsedReleaseNotes({
     required this.title,
@@ -301,6 +478,18 @@ class _ParsedReleaseNotes {
 
   final String title;
   final List<UpdateNoteItem> notes;
+}
+
+class _CumulativeChangelog {
+  const _CumulativeChangelog({
+    required this.title,
+    required this.notes,
+    required this.history,
+  });
+
+  final String title;
+  final List<UpdateNoteItem> notes;
+  final List<ReleaseChangelogEntry> history;
 }
 
 final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {

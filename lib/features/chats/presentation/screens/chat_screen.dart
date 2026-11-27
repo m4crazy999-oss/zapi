@@ -37,9 +37,11 @@ class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({
     super.key,
     required this.chatId,
+    this.initialReply,
   });
 
   final String chatId;
+  final ReplyQuote? initialReply;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -91,6 +93,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _notificationService.setActiveChatId(widget.chatId);
     _scrollController.addListener(_onScroll);
 
+    _replyingTo = widget.initialReply;
     _voiceController = VoiceRecorderController(
       onStateChanged: () {
         if (mounted) setState(() {});
@@ -101,6 +104,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           SnackBar(content: Text(msg)),
         );
       },
+      onBeforeRecordStart: () => _audioController.deactivateForRecording(),
       onCompleted: _handleRecordedVoice,
     );
   }

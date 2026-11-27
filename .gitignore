@@ -33,4 +33,10 @@ android/key.properties
 *.pem
 .env
 .env.*
+
+# Servidor / segredos extras e pacotes locais
 zapi-server/
+serviceAccountKey.json
+serviceAccount*.json
+*.apk
+*.aab

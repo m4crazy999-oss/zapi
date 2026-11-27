@@ -65,12 +65,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final granted = await service.requestPermissionIfNeeded();
     if (granted) {
       await _refreshNotificationStatus();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notificações ativadas neste aparelho!'),
-        ),
-      );
       return;
     }
 
@@ -80,16 +74,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Future<void> _toggleBackgroundMode(bool value) async {
     setState(() => _backgroundModeEnabled = value);
     await ref.read(notificationServiceProvider).setBackgroundModeEnabled(value);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          value
-              ? 'Recebimento com o aplicativo fechado ativado.'
-              : 'Recebimento com o aplicativo fechado desativado.',
-        ),
-      ),
-    );
   }
 
   Future<void> _requestBatteryExemption() async {
@@ -410,9 +394,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           Icons.battery_saver_rounded,
                           color: accent,
                         ),
-                        title: const Text('Permitir sem restrição de bateria'),
+                        title: const Text('Receber avisos com a tela apagada'),
                         subtitle: const Text(
-                          'Evita atrasos nos avisos com a tela desligada.',
+                          'Evita atrasos quando o celular economiza energia.',
                         ),
                         trailing: Icon(
                           Icons.chevron_right_rounded,

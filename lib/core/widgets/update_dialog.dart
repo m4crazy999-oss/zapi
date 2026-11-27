@@ -182,6 +182,8 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
     final surfaceColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final notes = widget.update.notes;
+    final history = widget.update.releaseHistory;
+    final hasMultipleVersions = history.length > 1;
 
     return PopScope(
       canPop: false,
@@ -230,7 +232,9 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Atualize o Zapi para continuar usando suas conversas.',
+                        hasMultipleVersions
+                            ? 'Você está na versão ${widget.update.currentVersionLabel}. Confira tudo o que chegou nas ${history.length} atualizações até a versão ${widget.update.versionLabel}.'
+                            : 'Atualize o Zapi (${widget.update.currentVersionLabel} → ${widget.update.versionLabel}) para continuar usando suas conversas.',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: secondaryText,
@@ -238,37 +242,102 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: surfaceColor,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: borderColor),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.update.title,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
+                      if (hasMultipleVersions)
+                        ...history.asMap().entries.map((entryItem) {
+                          final idx = entryItem.key;
+                          final entry = entryItem.value;
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              bottom: idx == history.length - 1 ? 0 : 12,
                             ),
-                            const SizedBox(height: 14),
-                            if (notes.isEmpty)
+                            child: Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: surfaceColor,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: borderColor),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 9,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.emerald
+                                              .withValues(alpha: 0.14),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        child: Text(
+                                          'v${entry.versionLabel}',
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: isDark
+                                                ? AppColors.emeraldBright
+                                                : AppColors.emeraldDark,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          entry.title,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleSmall
+                                              ?.copyWith(
+                                                  fontWeight: FontWeight.w700),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ...entry.notes.map(
+                                    (item) => _NoteRow(item: item),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        })
+                      else
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: surfaceColor,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                'Melhorias gerais de desempenho e estabilidade.',
-                                style: TextStyle(
-                                  color: secondaryText,
-                                  fontSize: 13.5,
-                                ),
-                              )
-                            else
-                              ...notes.map((item) => _NoteRow(item: item)),
-                          ],
+                                widget.update.title,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 14),
+                              if (notes.isEmpty)
+                                Text(
+                                  'Melhorias gerais de desempenho e estabilidade.',
+                                  style: TextStyle(
+                                    color: secondaryText,
+                                    fontSize: 13.5,
+                                  ),
+                                )
+                              else
+                                ...notes.map((item) => _NoteRow(item: item)),
+                            ],
+                          ),
                         ),
-                      ),
                       if (_isDownloading) ...[
                         const SizedBox(height: 20),
                         ClipRRect(

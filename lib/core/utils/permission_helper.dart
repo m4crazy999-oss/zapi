@@ -26,9 +26,9 @@ class PermissionHelper {
       permission: Permission.microphone,
       title: 'Acesso ao microfone',
       rationale:
-          'O Zapi precisa do microfone para gravar mensagens de voz quando você segura ou trava o botão de áudio.',
+          'O Zapi precisa do microfone apenas para gravar as mensagens de voz que você enviar.',
       deniedMessage:
-          'Permissão de microfone negada. Sem ela não é possível gravar mensagens de voz.',
+          'Permissão de microfone negada. Sem ela não é possível gravar áudios.',
       permanentlyDeniedMessage:
           'O acesso ao microfone foi desativado permanentemente. Abra as configurações do Zapi no Android para liberar o microfone.',
     );

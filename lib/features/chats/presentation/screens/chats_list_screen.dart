@@ -280,6 +280,13 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
 
     final normalizedQuery = _searchQuery.trim().toLowerCase();
     final chats = chatsAsync.value;
+    if (chats != null && myUid.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _scheduleIncomingDelivery(myUid, chats);
+        }
+      });
+    }
 
     Widget bodyContent;
     if (chats == null) {

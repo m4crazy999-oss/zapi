@@ -148,7 +148,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ZapiTextField(
                       controller: _passwordController,
                       label: 'Senha',
-                      prefixIcon: Icons.lock_outline_rounded,
+                      prefixIcon: Icons.lock_rounded,
                       obscureText: true,
                       textInputAction: TextInputAction.done,
                       enabled: !_submitting,

@@ -146,20 +146,6 @@ class ProfileController extends AsyncNotifier<void> {
       throw FirebaseErrorMapper.map(error);
     }
   }
-
-  Future<void> updateBannerPreset(String bannerPreset) async {
-    final user = ref.read(firebaseAuthProvider).currentUser;
-    if (user == null) return;
-
-    try {
-      await ref.read(profileRepositoryProvider).updateBannerPreset(
-            uid: user.uid,
-            bannerPreset: bannerPreset,
-          );
-    } catch (error) {
-      throw FirebaseErrorMapper.map(error);
-    }
-  }
 }
 
 final profileControllerProvider =

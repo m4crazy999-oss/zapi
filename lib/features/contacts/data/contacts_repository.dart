@@ -116,6 +116,7 @@ class ContactsRepository {
     required String ownerUid,
     required AppUser targetUser,
     String? nickname,
+    bool isFavorite = false,
   }) async {
     final cleanNickname = nickname?.trim();
     try {
@@ -128,6 +129,7 @@ class ContactsRepository {
         'photoBase64': targetUser.photoBase64,
         'photoUrl': targetUser.photoUrl,
         'about': targetUser.about,
+        'isFavorite': isFavorite,
         'addedAt': FieldValue.serverTimestamp(),
       });
       try {
@@ -151,6 +153,20 @@ class ContactsRepository {
       await _contactsRef(ownerUid).doc(contactUid).update({
         'nickname':
             (cleanNickname == null || cleanNickname.isEmpty) ? null : cleanNickname,
+      });
+    } catch (error) {
+      throw FirebaseErrorMapper.map(error);
+    }
+  }
+
+  Future<void> setFavorite({
+    required String ownerUid,
+    required String contactUid,
+    required bool isFavorite,
+  }) async {
+    try {
+      await _contactsRef(ownerUid).doc(contactUid).update({
+        'isFavorite': isFavorite,
       });
     } catch (error) {
       throw FirebaseErrorMapper.map(error);

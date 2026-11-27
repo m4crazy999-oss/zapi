@@ -1,7 +1,6 @@
-Banner personalizado no perfil, audio mais limpo e visual unificado
-- Novo: Escolha uma foto ou GIF da sua galeria como banner de perfil, com dissolucao suave no fundo
-- Novo: Busca em portugues, categorias organizadas e recentes no seletor de emojis
-- Melhorado: Audios com reducao de ruido na gravacao e controle suave ao arrastar na barra de progresso
-- Melhorado: Transicoes mais leves entre telas e abas em todo o aplicativo
-- Melhorado: Tela de configuracoes reorganizada no mesmo estilo limpo do app, sem opcoes repetidas
-- Melhorado: Icones padronizados em todo o aplicativo e lista de contatos mais direta
+Audio corrigido, banner limpo e Status completo por 24 horas
+- Corrigido: Audios agora gravam e reproduzem com som claro no alto-falante, com barras reagindo em tempo real a voz e sem aviso ao tocar no microfone
+- Melhorado: Banner de perfil simples e limpo no topo, sem desfoque, linhas de corte ou borda ao redor da foto de perfil
+- Novo: Status completo de texto e foto por 24 horas, com privacidade, lista de visualizacoes, amigos favoritos, silenciar e resposta direta
+- Melhorado: Tela de atualização agora mostra todas as novidades, melhorias e correções acumuladas de todas as versões anteriores que ainda não foram instaladas
+- Melhorado: Ajustes na lista de conversas, limpeza de telas antigas e icones padronizados

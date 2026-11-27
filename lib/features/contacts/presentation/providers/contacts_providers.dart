@@ -105,6 +105,19 @@ class ContactsController extends AsyncNotifier<void> {
         );
   }
 
+  Future<void> setFavorite({
+    required String contactUid,
+    required bool isFavorite,
+  }) async {
+    final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+    if (uid == null) return;
+    await ref.read(contactsRepositoryProvider).setFavorite(
+          ownerUid: uid,
+          contactUid: contactUid,
+          isFavorite: isFavorite,
+        );
+  }
+
   Future<void> removeContact(String contactUid) async {
     final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
     if (uid == null) return;

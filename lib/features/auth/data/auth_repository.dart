@@ -550,6 +550,24 @@ class AuthRepository {
         }
       } catch (_) {}
 
+      try {
+        final statusesSnap = await _firestore
+            .collection(AppConstants.statusesCollection)
+            .where('ownerUid', isEqualTo: user.uid)
+            .get();
+        for (final statusDoc in statusesSnap.docs) {
+          try {
+            final viewsSnap = await statusDoc.reference
+                .collection(AppConstants.statusViewsSubcollection)
+                .get();
+            for (final viewDoc in viewsSnap.docs) {
+              refsToDelete.add(viewDoc.reference);
+            }
+          } catch (_) {}
+          refsToDelete.add(statusDoc.reference);
+        }
+      } catch (_) {}
+
       final privateRef = userRef
           .collection(AppConstants.privateSubcollection)
           .doc(AppConstants.privateAccountDoc);

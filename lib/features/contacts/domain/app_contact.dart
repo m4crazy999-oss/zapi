@@ -9,6 +9,7 @@ class AppContact {
     this.nickname,
     this.photoBase64,
     this.photoUrl,
+    this.isFavorite = false,
     this.addedAt,
   });
 
@@ -19,6 +20,7 @@ class AppContact {
   final String? photoBase64;
   final String? photoUrl;
   final String about;
+  final bool isFavorite;
   final DateTime? addedAt;
 
   String get effectiveName {
@@ -42,6 +44,7 @@ class AppContact {
       photoBase64: data['photoBase64'] as String?,
       photoUrl: data['photoUrl'] as String?,
       about: (data['about'] as String?) ?? '',
+      isFavorite: (data['isFavorite'] as bool?) ?? false,
       addedAt: (data['addedAt'] as Timestamp?)?.toDate(),
     );
   }

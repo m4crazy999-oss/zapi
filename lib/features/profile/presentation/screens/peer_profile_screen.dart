@@ -195,6 +195,27 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
     }
   }
 
+  Future<void> _toggleFavorite(AppContact contact, bool value) async {
+    if (_isUpdatingContact) return;
+    setState(() => _isUpdatingContact = true);
+    try {
+      await ref.read(contactsControllerProvider.notifier).setFavorite(
+            contactUid: contact.contactUid,
+            isFavorite: value,
+          );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isUpdatingContact = false);
+    }
+  }
+
   Future<void> _removeContact(AppContact contact) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -411,28 +432,21 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
             alignment: Alignment.bottomCenter,
             children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 24),
+                padding: const EdgeInsets.only(bottom: 42),
                 child: ProfileBanner(
                   bannerBase64: bannerBase64,
-                  height: 236 + topPadding,
+                  height: 176 + topPadding,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  shape: BoxShape.circle,
-                ),
-                child: ZapiAvatar(
-                  displayName: displayName,
+              ZapiAvatar(
+                displayName: displayName,
+                photoBase64: photoBase64,
+                photoUrl: photoUrl,
+                radius: 50,
+                onTap: () => _openFullPhoto(
+                  title: displayName,
                   photoBase64: photoBase64,
                   photoUrl: photoUrl,
-                  radius: 50,
-                  onTap: () => _openFullPhoto(
-                    title: displayName,
-                    photoBase64: photoBase64,
-                    photoUrl: photoUrl,
-                  ),
                 ),
               ),
             ],
@@ -591,6 +605,25 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
                       onTap: () => _addToContacts(targetForContact),
                     )
                   else ...[
+                    SwitchListTile(
+                      secondary: Icon(
+                        savedContact.isFavorite
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: savedContact.isFavorite
+                            ? const Color(0xFFF59E0B)
+                            : null,
+                      ),
+                      title: const Text('Amigo favorito'),
+                      subtitle: const Text(
+                        'Destacar e permitir Status privados',
+                      ),
+                      value: savedContact.isFavorite,
+                      onChanged: _isUpdatingContact
+                          ? null
+                          : (val) => _toggleFavorite(savedContact, val),
+                    ),
+                    const Divider(height: 1),
                     ListTile(
                       enabled: !_isUpdatingContact,
                       leading: const Icon(Icons.edit_rounded),

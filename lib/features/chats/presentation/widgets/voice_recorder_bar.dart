@@ -19,14 +19,17 @@ class VoiceRecorderController {
     required this.onCompleted,
     required this.onStateChanged,
     required this.onFeedbackMessage,
+    this.onBeforeRecordStart,
   });
 
   final void Function(String filePath, int durationMs) onCompleted;
   final VoidCallback onStateChanged;
   final ValueChanged<String> onFeedbackMessage;
+  final Future<void> Function()? onBeforeRecordStart;
 
   final AudioRecorder _recorder = AudioRecorder();
   static const _uuid = Uuid();
+  static const int _barCount = 18;
 
   bool isRecording = false;
   bool isLocked = false;
@@ -34,7 +37,8 @@ class VoiceRecorderController {
   Duration elapsed = Duration.zero;
   double dragDx = 0;
   double dragDy = 0;
-  final List<double> liveAmplitudes = List<double>.filled(24, 0.14, growable: true);
+  final List<double> liveAmplitudes =
+      List<double>.filled(_barCount, 0.14, growable: true);
 
   Timer? _tickTimer;
   Timer? _ampTimer;
@@ -42,6 +46,8 @@ class VoiceRecorderController {
   String? _currentPath;
   Offset? _pointerStart;
   bool _starting = false;
+  bool _pointerReleasedDuringStart = false;
+  Future<void>? _stopInFlight;
 
   Future<void> handlePointerDown(
     BuildContext context,
@@ -49,15 +55,33 @@ class VoiceRecorderController {
   ) async {
     if (isRecording || _starting) return;
     _starting = true;
+    _pointerReleasedDuringStart = false;
 
     try {
-      final status = await Permission.microphone.status;
-      if (!status.isGranted) {
+      // Garante que qualquer gravação/cancelamento anterior terminou antes de gravar de novo.
+      final pendingStop = _stopInFlight;
+      if (pendingStop != null) {
+        await pendingStop.catchError((_) {});
+      }
+      if (_pointerReleasedDuringStart) return;
+
+      final micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
         if (context.mounted) {
           await PermissionHelper.requestMicrophone(context);
         }
         return;
       }
+
+      if (!await _recorder.hasPermission()) {
+        return;
+      }
+      if (_pointerReleasedDuringStart) return;
+
+      if (onBeforeRecordStart != null) {
+        await onBeforeRecordStart!().catchError((_) {});
+      }
+      if (_pointerReleasedDuringStart) return;
 
       final dir = await getTemporaryDirectory();
       final outDir = Directory(p.join(dir.path, 'zapi_voice'));
@@ -66,18 +90,16 @@ class VoiceRecorderController {
       }
 
       final filePath = p.join(outDir.path, 'voice_${_uuid.v4()}.m4a');
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: AppConstants.audioBitRate,
-          sampleRate: AppConstants.audioSampleRate,
-          numChannels: 1,
-          noiseSuppress: true,
-          echoCancel: true,
-          autoGain: true,
-        ),
-        path: filePath,
-      );
+      await _startRecorderWithSafeConfig(filePath);
+
+      if (_pointerReleasedDuringStart) {
+        await _recorder.cancel().catchError((_) {});
+        final stale = File(filePath);
+        if (await stale.exists()) {
+          await stale.delete().catchError((_) => stale);
+        }
+        return;
+      }
 
       _currentPath = filePath;
       _pointerStart = event.position;
@@ -90,16 +112,48 @@ class VoiceRecorderController {
       dragDy = 0;
       liveAmplitudes
         ..clear()
-        ..addAll(List<double>.filled(24, 0.14));
+        ..addAll(List<double>.filled(_barCount, 0.14));
 
       await HapticFeedback.mediumImpact();
       _startTimers();
       onStateChanged();
     } catch (_) {
-      onFeedbackMessage('Não foi possível iniciar a gravação de áudio.');
+      onFeedbackMessage('Não foi possível acessar o microfone agora.');
       await cancelRecording();
     } finally {
       _starting = false;
+    }
+  }
+
+  Future<void> _startRecorderWithSafeConfig(String filePath) async {
+    // echoCancel e autoGain desligados para evitar silêncio em HALs Android fora de chamada VoIP;
+    // noiseSuppress usa o supressor de ruído nativo do Android com qualidade padrão 44.1kHz / 64kbps.
+    const primaryConfig = RecordConfig(
+      encoder: AudioEncoder.aacLc,
+      bitRate: AppConstants.audioBitRate,
+      sampleRate: AppConstants.audioSampleRate,
+      numChannels: 1,
+      noiseSuppress: true,
+      echoCancel: false,
+      autoGain: false,
+    );
+
+    try {
+      await _recorder.start(primaryConfig, path: filePath);
+    } catch (_) {
+      // Fallback caso algum aparelho não suporte o supressor nativo nessa taxa.
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: AppConstants.audioBitRate,
+          sampleRate: AppConstants.audioSampleRate,
+          numChannels: 1,
+          noiseSuppress: false,
+          echoCancel: false,
+          autoGain: false,
+        ),
+        path: filePath,
+      );
     }
   }
 
@@ -123,6 +177,10 @@ class VoiceRecorderController {
   }
 
   Future<void> handlePointerUpOrCancel() async {
+    if (_starting && !isRecording) {
+      _pointerReleasedDuringStart = true;
+      return;
+    }
     if (!isRecording || isLocked) return;
 
     if (isCanceling) {
@@ -131,9 +189,9 @@ class VoiceRecorderController {
     }
 
     final durationMs = _currentDurationMs();
-    if (durationMs < 600) {
+    if (durationMs < 450) {
+      // Toque rápido cancela silenciosamente sem mostrar avisos nem travar o botão.
       await cancelRecording();
-      onFeedbackMessage('Segure o botão do microfone para gravar um áudio.');
       return;
     }
 
@@ -142,35 +200,72 @@ class VoiceRecorderController {
 
   Future<void> finishAndSend() async {
     if (!isRecording) return;
-    _stopTimers();
-    final durationMs =
-        _currentDurationMs().clamp(500, AppConstants.maxAudioDuration.inMilliseconds);
-    final recordedPath = await _recorder.stop() ?? _currentPath;
+    if (_stopInFlight != null) {
+      await _stopInFlight;
+      return;
+    }
 
-    _resetState();
-    onStateChanged();
+    final completer = Completer<void>();
+    _stopInFlight = completer.future;
 
-    if (recordedPath != null && await File(recordedPath).exists()) {
-      onCompleted(recordedPath, durationMs);
+    try {
+      _stopTimers();
+      final durationMs = _currentDurationMs()
+          .clamp(450, AppConstants.maxAudioDuration.inMilliseconds);
+      final recordedPath = await _recorder.stop() ?? _currentPath;
+
+      _resetState();
+      onStateChanged();
+
+      if (recordedPath != null) {
+        final file = File(recordedPath);
+        if (await file.exists()) {
+          final size = await file.length();
+          if (size > 512) {
+            onCompleted(recordedPath, durationMs);
+          } else {
+            await file.delete().catchError((_) => file);
+          }
+        }
+      }
+    } catch (_) {
+      _resetState();
+      onStateChanged();
+    } finally {
+      _stopInFlight = null;
+      completer.complete();
     }
   }
 
   Future<void> cancelRecording() async {
-    _stopTimers();
-    final pathToDelete = _currentPath;
-    try {
-      await _recorder.cancel();
-    } catch (_) {}
-
-    if (pathToDelete != null) {
-      final f = File(pathToDelete);
-      if (await f.exists()) {
-        await f.delete().catchError((_) => f);
-      }
+    if (_stopInFlight != null) {
+      await _stopInFlight;
+      return;
     }
 
-    _resetState();
-    onStateChanged();
+    final completer = Completer<void>();
+    _stopInFlight = completer.future;
+
+    try {
+      _stopTimers();
+      final pathToDelete = _currentPath;
+      try {
+        await _recorder.cancel();
+      } catch (_) {}
+
+      if (pathToDelete != null) {
+        final f = File(pathToDelete);
+        if (await f.exists()) {
+          await f.delete().catchError((_) => f);
+        }
+      }
+
+      _resetState();
+      onStateChanged();
+    } finally {
+      _stopInFlight = null;
+      completer.complete();
+    }
   }
 
   void _startTimers() {
@@ -189,15 +284,20 @@ class VoiceRecorderController {
       onStateChanged();
     });
 
-    _ampTimer = Timer.periodic(const Duration(milliseconds: 110), (_) async {
+    // Atualiza ~15 vezes por segundo com base na amplitude real do microfone (dBFS).
+    _ampTimer = Timer.periodic(const Duration(milliseconds: 65), (_) async {
       if (!isRecording) return;
       try {
         final amp = await _recorder.getAmplitude();
-        final normalized = ((amp.current + 52) / 52).clamp(0.12, 1.0);
-        if (liveAmplitudes.length >= 24) {
+        final db = amp.current.isFinite ? amp.current : -60.0;
+        final rawNorm = ((db + 45.0) / 42.0).clamp(0.10, 1.0);
+        final prev = liveAmplitudes.isNotEmpty ? liveAmplitudes.last : 0.14;
+        final smoothed = (prev * 0.25 + rawNorm * 0.75).clamp(0.10, 1.0);
+
+        if (liveAmplitudes.length >= _barCount) {
           liveAmplitudes.removeAt(0);
         }
-        liveAmplitudes.add(normalized);
+        liveAmplitudes.add(smoothed);
         onStateChanged();
       } catch (_) {}
     });
@@ -336,40 +436,45 @@ class VoiceRecordingBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Transform.translate(
-                      offset: Offset(controller.dragDx * 0.25, 0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Icon(
-                            Icons.chevron_left_rounded,
-                            size: 18,
-                            color: controller.isCanceling
-                                ? Theme.of(context).colorScheme.error
-                                : secondaryText,
-                          ),
-                          Flexible(
+                    child: controller.isCanceling
+                        ? Center(
                             child: Text(
-                              controller.isCanceling
-                                  ? 'Solte para cancelar'
-                                  : 'Deslize p/ cancelar • ↑ travar',
+                              'Solte para cancelar',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 12.5,
-                                color: controller.isCanceling
-                                    ? Theme.of(context).colorScheme.error
-                                    : secondaryText,
-                                fontWeight: controller.isCanceling
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
+                                fontSize: 13,
+                                color: Theme.of(context).colorScheme.error,
+                                fontWeight: FontWeight.w700,
                               ),
+                            ),
+                          )
+                        : _LiveWaveform(amplitudes: controller.liveAmplitudes),
+                  ),
+                  if (!controller.isCanceling) ...[
+                    const SizedBox(width: 6),
+                    Transform.translate(
+                      offset: Offset(controller.dragDx * 0.25, 0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.chevron_left_rounded,
+                            size: 16,
+                            color: secondaryText,
+                          ),
+                          Text(
+                            'Cancelar',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: secondaryText,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -463,9 +568,10 @@ class _LiveWaveform extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: amplitudes.map((amp) {
-          return Container(
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 60),
             width: 3,
-            height: (24 * amp).clamp(4.0, 24.0),
+            height: (24 * amp).clamp(3.0, 24.0),
             decoration: BoxDecoration(
               color: AppColors.emerald,
               borderRadius: BorderRadius.circular(2),

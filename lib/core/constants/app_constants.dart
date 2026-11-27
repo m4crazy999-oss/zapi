@@ -15,6 +15,8 @@ class AppConstants {
   static const String messagesSubcollection = 'messages';
   static const String mediaSubcollection = 'media';
   static const String stickersSubcollection = 'stickers';
+  static const String statusesCollection = 'statuses';
+  static const String statusViewsSubcollection = 'views';
 
   // Caminho para presença em tempo real
   static const String rtdbPresencePath = 'presence';
@@ -46,10 +48,16 @@ class AppConstants {
   static const int maxThumbnailBytes = 26 * 1024;
   static const int maxChatImageBytes = 700 * 1024;
 
+  // Limites de Status (expiração em 24h)
+  static const int maxStatusTextLength = 500;
+  static const int maxStatusImageBytes = 450 * 1024;
+  static const int maxStatusImageBase64Chars = 620000;
+  static const int statusDurationHours = 24;
+
   static const String defaultBannerPreset = 'aurora';
 
-  static const int audioBitRate = 24000;
-  static const int audioSampleRate = 24000;
+  static const int audioBitRate = 64000;
+  static const int audioSampleRate = 44100;
   static const Duration maxAudioDuration = Duration(minutes: 3);
   static const int maxChatAudioBytes = 900 * 1024;
   static const int maxFirestoreMediaBase64Chars = 980000;

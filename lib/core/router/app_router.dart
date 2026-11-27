@@ -7,15 +7,16 @@ import '../../features/auth/presentation/providers/auth_providers.dart';
 import '../../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/register_screen.dart';
+import '../../features/chats/domain/chat_message.dart';
 import '../../features/chats/presentation/screens/chat_screen.dart';
 import '../../features/chats/presentation/screens/chats_list_screen.dart';
 import '../../features/contacts/presentation/screens/add_contact_screen.dart';
 import '../../features/contacts/presentation/screens/contacts_screen.dart';
 import '../../features/home/presentation/screens/home_shell_screen.dart';
-import '../../features/home/presentation/screens/status_placeholder_screen.dart';
 import '../../features/profile/presentation/screens/peer_profile_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
+import '../../features/status/presentation/screens/status_screen.dart';
 import '../../features/stickers/presentation/screens/create_sticker_screen.dart';
 import '../services/notification_service.dart';
 import '../widgets/zapi_logo.dart';
@@ -153,7 +154,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/status',
-                builder: (context, state) => const StatusPlaceholderScreen(),
+                builder: (context, state) => const StatusScreen(),
               ),
             ],
           ),
@@ -180,7 +181,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) {
           final chatId = state.pathParameters['chatId'] ?? '';
-          return _buildSmoothPage(state, ChatScreen(chatId: chatId));
+          final initialReply =
+              state.extra is ReplyQuote ? state.extra as ReplyQuote : null;
+          return _buildSmoothPage(
+            state,
+            ChatScreen(chatId: chatId, initialReply: initialReply),
+          );
         },
       ),
       GoRoute(

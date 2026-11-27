@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -63,10 +65,31 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
     return const AudioPlaybackState();
   }
 
+  Future<AudioSession> _ensureSession() async {
+    final session = await AudioSession.instance;
+    if (!_sessionConfigured) {
+      _sessionConfigured = true;
+      // Usa perfil de mídia/música para sair no alto-falante principal (nunca no fone de ouvido interno de chamada).
+      await session.configure(const AudioSessionConfiguration.music());
+
+      _interruptionSub = session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          unawaited(pause());
+        }
+      });
+
+      _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
+        unawaited(pause());
+      });
+    }
+    return session;
+  }
+
   Future<void> _ensurePlayer() async {
     if (_player == null) {
       final player = AudioPlayer();
       _player = player;
+      await player.setVolume(1.0);
 
       _positionSub = player.positionStream.listen((pos) {
         if (!ref.mounted) return;
@@ -81,8 +104,10 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
       _playerStateSub = player.playerStateStream.listen((ps) async {
         if (!ref.mounted) return;
         if (ps.processingState == ProcessingState.completed) {
-          await player.seek(Duration.zero);
           await player.pause();
+          await player.seek(Duration.zero);
+          final session = await _ensureSession();
+          await session.setActive(false).catchError((_) => false);
           if (ref.mounted) {
             state = state.copyWith(
               isPlaying: false,
@@ -100,21 +125,7 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
       });
     }
 
-    if (!_sessionConfigured) {
-      _sessionConfigured = true;
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.speech());
-
-      _interruptionSub = session.interruptionEventStream.listen((event) {
-        if (event.begin) {
-          pause();
-        }
-      });
-
-      _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
-        pause();
-      });
-    }
+    await _ensureSession();
   }
 
   Future<void> togglePlay({
@@ -131,20 +142,44 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
     final isSameMessage = state.activeMessageId == messageId;
 
     if (isSameMessage && state.isPlaying) {
-      await player.pause();
+      await pause();
       return;
     }
 
     if (isSameMessage && _loadedSource == urlOrPath) {
-      final session = await AudioSession.instance;
-      if (await session.setActive(true)) {
+      try {
+        final session = await _ensureSession();
+        await session.setActive(true);
+        await player.setVolume(1.0);
+        await player.setSpeed(state.speed);
         onStarted?.call();
         await player.play();
+      } catch (_) {
+        if (ref.mounted) {
+          state = state.copyWith(
+            isPlaying: false,
+            isLoading: false,
+            errorMessage: 'Não foi possível retomar este áudio.',
+          );
+        }
       }
       return;
     }
 
     try {
+      if (isLocalFile) {
+        final file = File(urlOrPath);
+        if (!await file.exists() || await file.length() <= 64) {
+          state = state.copyWith(
+            activeMessageId: messageId,
+            isLoading: false,
+            isPlaying: false,
+            errorMessage: 'Arquivo de áudio vazio ou indisponível.',
+          );
+          return;
+        }
+      }
+
       state = state.copyWith(
         activeMessageId: messageId,
         isLoading: true,
@@ -161,15 +196,22 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
         await player.setUrl(urlOrPath);
       }
       _loadedSource = urlOrPath;
+      await player.setVolume(1.0);
       await player.setSpeed(state.speed);
 
-      final session = await AudioSession.instance;
-      if (await session.setActive(true)) {
-        onStarted?.call();
-        await player.play();
-      } else {
-        state = state.copyWith(isLoading: false);
+      final session = await _ensureSession();
+      final activated = await session.setActive(true);
+      if (!activated) {
+        state = state.copyWith(
+          isLoading: false,
+          isPlaying: false,
+          errorMessage: 'Não foi possível ativar a saída de som agora.',
+        );
+        return;
       }
+
+      onStarted?.call();
+      await player.play();
     } catch (_) {
       _loadedSource = null;
       if (ref.mounted) {
@@ -199,13 +241,42 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
 
   Future<void> pause() async {
     await _player?.pause();
+    try {
+      if (_sessionConfigured) {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+      }
+    } catch (_) {}
+  }
+
+  /// Pausa qualquer reprodução ativa e libera o foco de áudio antes da gravação.
+  Future<void> deactivateForRecording() async {
+    try {
+      await _player?.pause();
+      if (_sessionConfigured) {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+      }
+    } catch (_) {}
   }
 
   Future<void> stop() async {
     _loadedSource = null;
     await _player?.stop();
+    try {
+      if (_sessionConfigured) {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+      }
+    } catch (_) {}
     if (ref.mounted) {
       state = AudioPlaybackState(speed: state.speed);
+    }
+  }
+
+  void clearError() {
+    if (state.errorMessage != null) {
+      state = state.copyWith(clearError: true);
     }
   }
 
@@ -215,12 +286,15 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
     _playerStateSub?.cancel();
     _interruptionSub?.cancel();
     _becomingNoisySub?.cancel();
-    _player?.dispose();
+    unawaited(_player?.dispose());
     _player = null;
+    if (_sessionConfigured) {
+      AudioSession.instance
+          .then((s) => s.setActive(false))
+          .catchError((_) => false);
+    }
   }
 }
-
-typedef VoidCallback = void Function();
 
 final audioPlaybackProvider =
     NotifierProvider<AudioPlaybackController, AudioPlaybackState>(
