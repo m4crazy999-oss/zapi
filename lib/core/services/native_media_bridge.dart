@@ -117,6 +117,7 @@ class NativeMediaBridge {
     required int startMs,
     required int endMs,
     int maxBytes = AppConstants.maxStatusVideoBytes,
+    bool removeAudio = false,
   }) async {
     if (!Platform.isAndroid) {
       throw const AppException(
@@ -132,6 +133,7 @@ class NativeMediaBridge {
           'startMs': startMs,
           'endMs': endMs,
           'maxBytes': maxBytes,
+          'removeAudio': removeAudio,
         },
       );
       if (raw == null) {

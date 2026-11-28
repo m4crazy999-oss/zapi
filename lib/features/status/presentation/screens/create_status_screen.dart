@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/utils/zapi_toast.dart';
+import '../../../../core/widgets/editor/editor_models.dart';
 import '../../../../core/widgets/zapi_camera_screen.dart';
 import '../../../../core/widgets/zapi_photo_editor_screen.dart';
 import '../../../../core/widgets/zapi_video_trimmer_screen.dart';
@@ -29,21 +31,36 @@ class CreateStatusScreen extends ConsumerStatefulWidget {
 class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
   final _textController = TextEditingController();
   final _captionController = TextEditingController();
+  final _textFocusNode = FocusNode();
 
   String _mode = 'text'; // 'text' | 'image' | 'video'
 
-  // Estilo do status de texto
+  // Estilo e posição do status de texto
   int _presetIndex = 0;
   int _textColorIndex = 0;
   int _fontIndex = 0;
   int _alignIndex = 0;
   int _sizeIndex = 1; // 0 = 20, 1 = 26, 2 = 32
+  bool _isBold = true;
+  bool _isItalic = false;
+  bool _withPill = false;
+  double _textPosX = 0.5;
+  double _textPosY = 0.5;
+  double _textScale = 1.0;
+  double _textRotation = 0.0;
+  String? _textBackgroundPhotoPath;
+
+  Offset? _lastFocalPoint;
+  double _gestureStartScale = 1.0;
+  double _gestureStartRotation = 0.0;
 
   static const _fonts = [
     ('sans', 'Moderna'),
     ('serif', 'Clássica'),
     ('mono', 'Máquina'),
     ('display', 'Destaque'),
+    ('handwriting', 'Manuscrita'),
+    ('condensed', 'Compacta'),
   ];
   static const _alignments = [
     ('center', TextAlign.center, Icons.format_align_center_rounded),
@@ -64,46 +81,57 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
   void dispose() {
     _textController.dispose();
     _captionController.dispose();
+    _textFocusNode.dispose();
     _videoController?.dispose();
     super.dispose();
   }
 
   StatusStylePreset get _activePreset => StatusItem.stylePresets[_presetIndex];
 
+  bool get _hasMovedText =>
+      (_textPosX - 0.5).abs() > 0.03 ||
+      (_textPosY - 0.5).abs() > 0.03 ||
+      (_textScale - 1.0).abs() > 0.05 ||
+      _textRotation.abs() > 0.04;
+
+  void _resetTextTransform() {
+    setState(() {
+      _textPosX = 0.5;
+      _textPosY = 0.5;
+      _textScale = 1.0;
+      _textRotation = 0.0;
+    });
+  }
+
+  Future<void> _pickTextBackgroundPhoto() async {
+    final captured = await Navigator.push<ZapiCapturedMedia>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ZapiCameraScreen(
+          allowVideo: false,
+          maxPhotos: 1,
+        ),
+      ),
+    );
+    if (captured == null || captured.paths.isEmpty || !mounted) return;
+    setState(() {
+      _textBackgroundPhotoPath = captured.paths.first;
+    });
+  }
+
   TextStyle _buildTextStatusStyle({
     required String fontKey,
     required Color color,
     required double fontSize,
   }) {
-    return switch (fontKey) {
-      'serif' => TextStyle(
-          fontFamily: 'serif',
-          color: color,
-          fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          height: 1.35,
-        ),
-      'mono' => TextStyle(
-          fontFamily: 'monospace',
-          color: color,
-          fontSize: fontSize,
-          fontWeight: FontWeight.w600,
-          height: 1.35,
-        ),
-      'display' => TextStyle(
-          color: color,
-          fontSize: fontSize + 2,
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.6,
-          height: 1.28,
-        ),
-      _ => TextStyle(
-          color: color,
-          fontSize: fontSize,
-          fontWeight: FontWeight.w600,
-          height: 1.35,
-        ),
-    };
+    return buildEditorOverlayTextStyle(
+      fontKey: fontKey,
+      color: color,
+      fontSize: fontSize,
+      withShadow: _textBackgroundPhotoPath != null,
+      isBold: _isBold,
+      isItalic: _isItalic,
+    ).copyWith(height: 1.32);
   }
 
   Future<void> _openPhotoFlow() async {
@@ -166,7 +194,7 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
         builder: (_) => ZapiVideoTrimmerScreen(
           videoPath: captured.paths.first,
           maxBytes: AppConstants.maxStatusVideoBytes,
-          maxDurationMs: 60000,
+          maxDurationMs: AppConstants.maxStatusVideoDuration.inMilliseconds,
           captionHint: 'Adicione uma legenda...',
           primaryButtonLabel: 'Usar no status',
         ),
@@ -271,6 +299,9 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
       } else {
         final preset = _activePreset;
         final textColor = StatusItem.textColorOptions[_textColorIndex];
+        final normalizedRotation = math
+            .atan2(math.sin(_textRotation), math.cos(_textRotation))
+            .clamp(-6.28, 6.28);
         await repo.createTextStatus(
           owner: user,
           text: _textController.text,
@@ -280,6 +311,14 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
           fontStyle: _fonts[_fontIndex].$1,
           textAlign: _alignments[_alignIndex].$1,
           fontSize: _fontSizes[_sizeIndex],
+          textPosX: _textPosX,
+          textPosY: _textPosY,
+          textScale: _textScale,
+          textRotation: normalizedRotation,
+          isBold: _isBold,
+          isItalic: _isItalic,
+          withPill: _withPill,
+          backgroundPhotoPath: _textBackgroundPhotoPath,
           contacts: contacts,
           privacyMode: privacyMode,
           customUids: prefs.statusCustomUids,
@@ -314,30 +353,43 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
     final bgEnd = preset.backgroundGradientEnd != null
         ? Color(preset.backgroundGradientEnd!)
         : null;
+    final hasPhotoBg = _mode == 'text' && _textBackgroundPhotoPath != null;
     final isLightPreset =
-        _mode == 'text' && bgStart.computeLuminance() > 0.62;
-    final chromeForeground = isLightPreset ? AppColors.lightTextPrimary : Colors.white;
+        _mode == 'text' && !hasPhotoBg && bgStart.computeLuminance() > 0.62;
+    final chromeForeground =
+        isLightPreset ? AppColors.lightTextPrimary : Colors.white;
     final textColor = Color(StatusItem.textColorOptions[_textColorIndex]);
 
     return Scaffold(
       backgroundColor: _mode == 'text' ? bgStart : AppColors.darkBackground,
-      body: AnimatedContainer(
-        duration: const Duration(milliseconds: 240),
-        decoration: _mode == 'text'
-            ? BoxDecoration(
-                color: bgEnd == null ? bgStart : null,
-                gradient: bgEnd != null
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [bgStart, bgEnd],
-                      )
-                    : null,
-              )
-            : const BoxDecoration(color: AppColors.darkBackground),
-        child: SafeArea(
-          child: Column(
-            children: [
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 240),
+            decoration: _mode == 'text'
+                ? BoxDecoration(
+                    color: bgEnd == null ? bgStart : null,
+                    gradient: bgEnd != null
+                        ? LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [bgStart, bgEnd],
+                          )
+                        : null,
+                  )
+                : const BoxDecoration(color: AppColors.darkBackground),
+          ),
+          if (hasPhotoBg) ...[
+            Image.file(
+              File(_textBackgroundPhotoPath!),
+              fit: BoxFit.cover,
+            ),
+            ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
+          ],
+          SafeArea(
+            child: Column(
+              children: [
               // Barra superior
               Padding(
                 padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
@@ -402,7 +454,7 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                 ),
               ),
 
-              // Barra rápida de tipografia no modo Texto
+              // Barra rápida de tipografia e fundo no modo Texto
               if (_mode == 'text')
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
@@ -416,6 +468,27 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                           onTap: () => setState(() {
                             _fontIndex = (_fontIndex + 1) % _fonts.length;
                           }),
+                        ),
+                        const SizedBox(width: 8),
+                        _StatusToolPill(
+                          icon: Icons.format_bold_rounded,
+                          label: 'Negrito',
+                          active: _isBold,
+                          onTap: () => setState(() => _isBold = !_isBold),
+                        ),
+                        const SizedBox(width: 8),
+                        _StatusToolPill(
+                          icon: Icons.format_italic_rounded,
+                          label: 'Itálico',
+                          active: _isItalic,
+                          onTap: () => setState(() => _isItalic = !_isItalic),
+                        ),
+                        const SizedBox(width: 8),
+                        _StatusToolPill(
+                          icon: Icons.format_color_fill_rounded,
+                          label: 'Caixa',
+                          active: _withPill,
+                          onTap: () => setState(() => _withPill = !_withPill),
                         ),
                         const SizedBox(width: 8),
                         _StatusToolPill(
@@ -444,6 +517,30 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                                 StatusItem.textColorOptions.length;
                           }),
                         ),
+                        const SizedBox(width: 8),
+                        _StatusToolPill(
+                          icon: _textBackgroundPhotoPath != null
+                              ? Icons.layers_clear_rounded
+                              : Icons.photo_library_rounded,
+                          label: _textBackgroundPhotoPath != null
+                              ? 'Sem foto'
+                              : 'Foto de fundo',
+                          onTap: () {
+                            if (_textBackgroundPhotoPath != null) {
+                              setState(() => _textBackgroundPhotoPath = null);
+                            } else {
+                              _pickTextBackgroundPhoto();
+                            }
+                          },
+                        ),
+                        if (_hasMovedText) ...[
+                          const SizedBox(width: 8),
+                          _StatusToolPill(
+                            icon: Icons.center_focus_strong_rounded,
+                            label: 'Centralizar',
+                            onTap: _resetTextTransform,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -454,8 +551,8 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                 child: _buildMainContent(textColor, isLightPreset),
               ),
 
-              // Seletor de fundos e degradês (modo Texto)
-              if (_mode == 'text')
+              // Seletor de fundos e degradês (modo Texto sem foto de fundo)
+              if (_mode == 'text' && _textBackgroundPhotoPath == null)
                 SizedBox(
                   height: 44,
                   child: ListView.separated(
@@ -640,6 +737,7 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
             ],
           ),
         ),
+        ],
       ),
     );
   }
@@ -743,7 +841,7 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Grave ou escolha um vídeo de até 1 minuto',
+                  'Grave ou escolha um vídeo de até 30 segundos',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
@@ -825,62 +923,151 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
       );
     }
 
-    // Modo Texto sem nenhuma borda ao redor do campo
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 26),
-        child: Theme(
-          data: Theme.of(context).copyWith(
-            inputDecorationTheme: const InputDecorationTheme(
-              filled: false,
-              fillColor: Colors.transparent,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              disabledBorder: InputBorder.none,
-              errorBorder: InputBorder.none,
-              focusedErrorBorder: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-          child: TextField(
-            controller: _textController,
-            enabled: !_publishing,
-            maxLength: AppConstants.maxStatusTextLength,
-            maxLines: 9,
-            minLines: 1,
-            textAlign: _alignments[_alignIndex].$2,
-            textCapitalization: TextCapitalization.sentences,
-            style: _buildTextStatusStyle(
-              fontKey: _fonts[_fontIndex].$1,
-              color: textColor,
-              fontSize: _fontSizes[_sizeIndex],
-            ),
-            cursorColor: textColor,
-            decoration: InputDecoration(
-              counterText: '',
-              filled: false,
-              fillColor: Colors.transparent,
-              isCollapsed: true,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              disabledBorder: InputBorder.none,
-              errorBorder: InputBorder.none,
-              focusedErrorBorder: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-              hintText: 'Digite um status...',
-              hintStyle: _buildTextStatusStyle(
-                fontKey: _fonts[_fontIndex].$1,
-                color: isLightPreset
-                    ? AppColors.lightTextPrimary.withValues(alpha: 0.45)
-                    : textColor.withValues(alpha: 0.55),
-                fontSize: _fontSizes[_sizeIndex],
+    // Modo Texto sem bordas e com posicionamento/zoom/giro livre na tela
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cw = constraints.maxWidth;
+        final ch = constraints.maxHeight;
+        final pillColor = textColor.computeLuminance() > 0.6
+            ? Colors.black.withValues(alpha: 0.6)
+            : Colors.white.withValues(alpha: 0.85);
+
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => _textFocusNode.requestFocus(),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: _textPosX * cw,
+                top: _textPosY * ch,
+                child: FractionalTranslation(
+                  translation: const Offset(-0.5, -0.5),
+                  child: GestureDetector(
+                    onTap: () => _textFocusNode.requestFocus(),
+                    onScaleStart: (d) {
+                      _lastFocalPoint = d.focalPoint;
+                      _gestureStartScale = _textScale;
+                      _gestureStartRotation = _textRotation;
+                    },
+                    onScaleUpdate: (d) {
+                      final delta =
+                          d.focalPoint - (_lastFocalPoint ?? d.focalPoint);
+                      _lastFocalPoint = d.focalPoint;
+                      setState(() {
+                        _textPosX =
+                            (_textPosX + delta.dx / cw).clamp(0.08, 0.92);
+                        _textPosY =
+                            (_textPosY + delta.dy / ch).clamp(0.10, 0.90);
+                        _textScale =
+                            (_gestureStartScale * d.scale).clamp(0.5, 2.8);
+                        _textRotation = _gestureStartRotation + d.rotation;
+                      });
+                    },
+                    child: Transform.rotate(
+                      angle: _textRotation,
+                      child: Transform.scale(
+                        scale: _textScale,
+                        child: Container(
+                          constraints: BoxConstraints(
+                            maxWidth: cw * 0.86,
+                            minWidth: 140,
+                          ),
+                          padding: _withPill
+                              ? const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                )
+                              : const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: _withPill
+                              ? BoxDecoration(
+                                  color: pillColor,
+                                  borderRadius: BorderRadius.circular(14),
+                                )
+                              : null,
+                          child: Theme(
+                            data: Theme.of(context).copyWith(
+                              inputDecorationTheme: const InputDecorationTheme(
+                                filled: false,
+                                fillColor: Colors.transparent,
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            child: TextField(
+                              focusNode: _textFocusNode,
+                              controller: _textController,
+                              enabled: !_publishing,
+                              maxLength: AppConstants.maxStatusTextLength,
+                              maxLines: 9,
+                              minLines: 1,
+                              textAlign: _alignments[_alignIndex].$2,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: _buildTextStatusStyle(
+                                fontKey: _fonts[_fontIndex].$1,
+                                color: textColor,
+                                fontSize: _fontSizes[_sizeIndex],
+                              ),
+                              cursorColor: textColor,
+                              decoration: InputDecoration(
+                                counterText: '',
+                                filled: false,
+                                fillColor: Colors.transparent,
+                                isCollapsed: true,
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                                hintText: 'Digite um status...',
+                                hintStyle: _buildTextStatusStyle(
+                                  fontKey: _fonts[_fontIndex].$1,
+                                  color: isLightPreset
+                                      ? AppColors.lightTextPrimary
+                                          .withValues(alpha: 0.45)
+                                      : textColor.withValues(alpha: 0.55),
+                                  fontSize: _fontSizes[_sizeIndex],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              Positioned(
+                bottom: 8,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: Center(
+                    child: Text(
+                      'Arraste, aproxime os dedos para ajustar ou toque para editar',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: (isLightPreset
+                                ? AppColors.lightTextPrimary
+                                : Colors.white)
+                            .withValues(alpha: 0.65),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -891,12 +1078,14 @@ class _StatusToolPill extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.swatchColor,
+    this.active = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final Color? swatchColor;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
@@ -906,9 +1095,15 @@ class _StatusToolPill extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.34),
+          color: active
+              ? AppColors.emerald.withValues(alpha: 0.85)
+              : Colors.black.withValues(alpha: 0.34),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+          border: Border.all(
+            color: active
+                ? AppColors.emeraldBright
+                : Colors.white.withValues(alpha: 0.2),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

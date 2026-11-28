@@ -200,6 +200,7 @@ class ProfileRepository {
     required String uid,
     bool? hideLastSeen,
     bool? hideReadReceipts,
+    String? addPrivacy,
   }) async {
     final updates = <String, dynamic>{};
     if (hideLastSeen != null) {
@@ -207,6 +208,12 @@ class ProfileRepository {
     }
     if (hideReadReceipts != null) {
       updates['hideReadReceipts'] = hideReadReceipts;
+    }
+    if (addPrivacy != null &&
+        (addPrivacy == 'all' ||
+            addPrivacy == 'idOnly' ||
+            addPrivacy == 'usernameOnly')) {
+      updates['addPrivacy'] = addPrivacy;
     }
     if (updates.isEmpty) return;
     try {

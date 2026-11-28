@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/services/chat_preferences_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -115,8 +118,8 @@ class StatusScreen extends ConsumerWidget {
                 ),
                 subtitle: Text(
                   group.isMuted
-                      ? 'As atualizações de ${group.displayName} voltam para a lista principal.'
-                      : 'As atualizações de ${group.displayName} ficam recolhidas em Silenciados.',
+                      ? 'As atualizações de ${group.displayName} voltam para o topo na ordem normal.'
+                      : 'As atualizações de ${group.displayName} ficam recolhidas no final da lista.',
                 ),
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -138,10 +141,12 @@ class StatusScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(currentUserProfileProvider).value;
     final myStatuses = ref.watch(myStatusesProvider);
-    final boardAsync = ref.watch(statusBoardProvider);
+    final groupsAsync = ref.watch(unifiedStatusGroupsProvider);
+    final prefs = ref.watch(chatPreferencesProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    final accentColor = Theme.of(context).colorScheme.primary;
 
     final displayName = profile?.displayName ?? 'Meu status';
     final myLatest = myStatuses.isNotEmpty ? myStatuses.last : null;
@@ -155,12 +160,30 @@ class StatusScreen extends ConsumerWidget {
             onPressed: () => _openPrivacy(context),
             icon: const Icon(Icons.lock_rounded),
           ),
+          IconButton(
+            tooltip: 'Configurações',
+            onPressed: () => context.push('/settings'),
+            icon: const Icon(Icons.settings_rounded),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => context.push('/profile'),
+              child: ZapiAvatar(
+                displayName: profile?.displayName ?? 'Você',
+                photoBase64: profile?.photoBase64,
+                photoUrl: profile?.photoUrl,
+                radius: 17,
+              ),
+            ),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'status_create_fab',
         onPressed: () => _openCreateStatus(context),
-        backgroundColor: AppColors.emerald,
+        backgroundColor: accentColor,
         foregroundColor: Colors.white,
         tooltip: 'Novo status',
         icon: const Icon(Icons.add_rounded),
@@ -181,8 +204,10 @@ class StatusScreen extends ConsumerWidget {
               displayName: displayName,
               photoBase64: profile?.photoBase64,
               photoUrl: profile?.photoUrl,
-              hasRing: myStatuses.isNotEmpty,
-              isUnviewed: myStatuses.isNotEmpty,
+              segmentsViewed: [
+                for (var i = 0; i < myStatuses.length; i++) false,
+              ],
+              accentColor: accentColor,
             ),
             title: const Text(
               'Meu status',
@@ -207,7 +232,7 @@ class StatusScreen extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1),
-          boardAsync.when(
+          groupsAsync.when(
             loading: () => const Padding(
               padding: EdgeInsets.only(top: 12),
               child: ZapiListSkeleton(showTimestamp: false, itemCount: 4),
@@ -220,10 +245,8 @@ class StatusScreen extends ConsumerWidget {
                 style: TextStyle(color: secondaryText),
               ),
             ),
-            data: (board) {
-              if (board.recent.isEmpty &&
-                  board.viewed.isEmpty &&
-                  board.muted.isEmpty) {
+            data: (groups) {
+              if (groups.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
@@ -262,85 +285,30 @@ class StatusScreen extends ConsumerWidget {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (board.recent.isNotEmpty) ...[
-                    _SectionHeader(title: 'Atualizações recentes'),
-                    for (var i = 0; i < board.recent.length; i++)
-                      _StatusContactTile(
-                        group: board.recent[i],
-                        timeLabel: _formatUpdatedTime(
-                          board.recent[i].latest.createdAt,
-                        ),
-                        secondaryText: secondaryText,
-                        onTap: () => _openContactStatuses(
-                          context,
-                          groups: board.recent,
-                          initialIndex: i,
-                        ),
-                        onLongPress: () => _showMuteSheet(
-                          context,
-                          ref,
-                          board.recent[i],
-                        ),
-                      ),
-                  ],
-                  if (board.viewed.isNotEmpty) ...[
-                    _SectionHeader(title: 'Já visualizados'),
-                    for (var i = 0; i < board.viewed.length; i++)
-                      _StatusContactTile(
-                        group: board.viewed[i],
-                        timeLabel: _formatUpdatedTime(
-                          board.viewed[i].latest.createdAt,
-                        ),
-                        secondaryText: secondaryText,
-                        onTap: () => _openContactStatuses(
-                          context,
-                          groups: board.viewed,
-                          initialIndex: i,
-                        ),
-                        onLongPress: () => _showMuteSheet(
-                          context,
-                          ref,
-                          board.viewed[i],
-                        ),
-                      ),
-                  ],
-                  if (board.muted.isNotEmpty)
-                    Theme(
-                      data: Theme.of(context).copyWith(
-                        dividerColor: Colors.transparent,
-                      ),
-                      child: ExpansionTile(
-                        title: Text(
-                          'Silenciados (${board.muted.length})',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: secondaryText,
-                          ),
-                        ),
-                        children: [
-                          for (var i = 0; i < board.muted.length; i++)
-                            Opacity(
-                              opacity: 0.65,
-                              child: _StatusContactTile(
-                                group: board.muted[i],
-                                timeLabel: _formatUpdatedTime(
-                                  board.muted[i].latest.createdAt,
-                                ),
-                                secondaryText: secondaryText,
-                                onTap: () => _openContactStatuses(
-                                  context,
-                                  groups: board.muted,
-                                  initialIndex: i,
-                                ),
-                                onLongPress: () => _showMuteSheet(
-                                  context,
-                                  ref,
-                                  board.muted[i],
-                                ),
-                              ),
-                            ),
+                  for (var i = 0; i < groups.length; i++)
+                    Opacity(
+                      opacity: groups[i].isMuted ? 0.62 : 1.0,
+                      child: _StatusContactTile(
+                        group: groups[i],
+                        segmentsViewed: [
+                          for (final s in groups[i].statuses)
+                            groups[i].isMuted || prefs.isStatusViewed(s.id),
                         ],
+                        accentColor: accentColor,
+                        timeLabel: _formatUpdatedTime(
+                          groups[i].latest.createdAt,
+                        ),
+                        secondaryText: secondaryText,
+                        onTap: () => _openContactStatuses(
+                          context,
+                          groups: groups,
+                          initialIndex: i,
+                        ),
+                        onLongPress: () => _showMuteSheet(
+                          context,
+                          ref,
+                          groups[i],
+                        ),
                       ),
                     ),
                 ],
@@ -353,32 +321,11 @@ class StatusScreen extends ConsumerWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color:
-              isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-        ),
-      ),
-    );
-  }
-}
-
 class _StatusContactTile extends StatelessWidget {
   const _StatusContactTile({
     required this.group,
+    required this.segmentsViewed,
+    required this.accentColor,
     required this.timeLabel,
     required this.secondaryText,
     required this.onTap,
@@ -386,6 +333,8 @@ class _StatusContactTile extends StatelessWidget {
   });
 
   final ContactStatusGroup group;
+  final List<bool> segmentsViewed;
+  final Color accentColor;
   final String timeLabel;
   final Color secondaryText;
   final VoidCallback onTap;
@@ -399,8 +348,8 @@ class _StatusContactTile extends StatelessWidget {
       leading: _StatusRingAvatar(
         displayName: group.displayName,
         photoBase64: group.photoBase64,
-        hasRing: true,
-        isUnviewed: group.hasUnviewed && !group.isMuted,
+        segmentsViewed: segmentsViewed,
+        accentColor: accentColor,
       ),
       title: Text(
         group.displayName,
@@ -414,6 +363,13 @@ class _StatusContactTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(fontSize: 13, color: secondaryText),
       ),
+      trailing: group.isMuted
+          ? Icon(
+              Icons.notifications_off_rounded,
+              size: 16,
+              color: secondaryText,
+            )
+          : null,
       onTap: onTap,
       onLongPress: onLongPress,
     );
@@ -425,15 +381,15 @@ class _StatusRingAvatar extends StatelessWidget {
     required this.displayName,
     this.photoBase64,
     this.photoUrl,
-    required this.hasRing,
-    required this.isUnviewed,
+    required this.segmentsViewed,
+    required this.accentColor,
   });
 
   final String displayName;
   final String? photoBase64;
   final String? photoUrl;
-  final bool hasRing;
-  final bool isUnviewed;
+  final List<bool> segmentsViewed;
+  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -445,19 +401,78 @@ class _StatusRingAvatar extends StatelessWidget {
       radius: 24,
     );
 
-    if (!hasRing) return avatar;
+    if (segmentsViewed.isEmpty) return avatar;
 
-    final ringColor = isUnviewed
-        ? AppColors.emerald
-        : (isDark ? AppColors.darkBorder : const Color(0xFFB7C4BF));
+    final viewedColor =
+        isDark ? AppColors.darkBorder : const Color(0xFFB7C4BF);
 
-    return Container(
-      padding: const EdgeInsets.all(2.5),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: ringColor, width: 2.2),
+    return CustomPaint(
+      painter: _StatusSegmentedRingPainter(
+        segmentsViewed: segmentsViewed,
+        unviewedColor: accentColor,
+        viewedColor: viewedColor,
       ),
-      child: avatar,
+      child: Padding(
+        padding: const EdgeInsets.all(4.5),
+        child: avatar,
+      ),
     );
+  }
+}
+
+class _StatusSegmentedRingPainter extends CustomPainter {
+  const _StatusSegmentedRingPainter({
+    required this.segmentsViewed,
+    required this.unviewedColor,
+    required this.viewedColor,
+  });
+
+  final List<bool> segmentsViewed;
+  final Color unviewedColor;
+  final Color viewedColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final count = segmentsViewed.length;
+    if (count == 0) return;
+
+    const strokeWidth = 2.4;
+    final rect = Offset.zero & size;
+    final arcRect = rect.deflate(strokeWidth / 2);
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    if (count == 1) {
+      paint.color = segmentsViewed.first ? viewedColor : unviewedColor;
+      canvas.drawArc(arcRect, 0, math.pi * 2, false, paint);
+      return;
+    }
+
+    final gap = count > 8 ? 0.14 : 0.18;
+    final totalSweep = math.pi * 2;
+    final segmentSweep = (totalSweep - count * gap) / count;
+    var startAngle = -math.pi / 2 + gap / 2;
+
+    for (var i = 0; i < count; i++) {
+      paint.color = segmentsViewed[i] ? viewedColor : unviewedColor;
+      canvas.drawArc(arcRect, startAngle, segmentSweep, false, paint);
+      startAngle += segmentSweep + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StatusSegmentedRingPainter oldDelegate) {
+    if (oldDelegate.unviewedColor != unviewedColor ||
+        oldDelegate.viewedColor != viewedColor ||
+        oldDelegate.segmentsViewed.length != segmentsViewed.length) {
+      return true;
+    }
+    for (var i = 0; i < segmentsViewed.length; i++) {
+      if (oldDelegate.segmentsViewed[i] != segmentsViewed[i]) return true;
+    }
+    return false;
   }
 }

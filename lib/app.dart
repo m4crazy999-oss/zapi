@@ -69,6 +69,7 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       presence.setAppForeground(true);
       notifications.setAppForeground(true);
+      unawaited(notifications.ensureBackgroundServiceStartedIfEnabled());
       unawaited(_checkForUpdates());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
@@ -141,6 +142,7 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
+    final accent = ref.watch(accentPresetProvider);
     final router = ref.watch(appRouterProvider);
     final isAppLocked = ref.watch(appLockControllerProvider);
     final prefs = ref.watch(chatPreferencesProvider);
@@ -188,8 +190,8 @@ class _ZapiAppState extends ConsumerState<ZapiApp> with WidgetsBindingObserver {
     return MaterialApp.router(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      theme: AppTheme.lightTheme(accent),
+      darkTheme: AppTheme.darkTheme(accent),
       themeMode: themeMode,
       routerConfig: router,
       builder: (context, child) {

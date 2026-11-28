@@ -16,6 +16,7 @@ import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/utils/zapi_toast.dart';
+import '../../../../core/widgets/editor/editor_models.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../chats/domain/chat_message.dart';
@@ -517,7 +518,10 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
     final ownViewsCount = widget.isMine
         ? (ref.watch(statusViewsProvider(current.id)).value?.length ?? 0)
         : 0;
-    final imageBytes = current.isImage ? _decodeStatusImage(current) : null;
+    final imageBytes = (current.isImage ||
+            (current.isText && (current.imageBase64?.isNotEmpty ?? false)))
+        ? _decodeStatusImage(current)
+        : null;
 
     final bgStart = current.isText
         ? Color(current.backgroundColor)
@@ -534,35 +538,17 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
         ? (current.fontSize * 0.82).clamp(16.0, 32.0)
         : current.fontSize;
     final statusTextColor = Color(current.textColor ?? 0xFFFFFFFF);
-    final textStyle = switch (current.fontStyle) {
-      'serif' => TextStyle(
-          fontFamily: 'serif',
-          color: statusTextColor,
-          fontSize: baseFontSize,
-          fontWeight: FontWeight.w700,
-          height: 1.32,
-        ),
-      'mono' => TextStyle(
-          fontFamily: 'monospace',
-          color: statusTextColor,
-          fontSize: baseFontSize,
-          fontWeight: FontWeight.w600,
-          height: 1.32,
-        ),
-      'display' => TextStyle(
-          color: statusTextColor,
-          fontSize: baseFontSize + 2,
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.6,
-          height: 1.28,
-        ),
-      _ => TextStyle(
-          color: statusTextColor,
-          fontSize: baseFontSize,
-          fontWeight: FontWeight.w600,
-          height: 1.32,
-        ),
-    };
+    final textStyle = buildEditorOverlayTextStyle(
+      fontKey: current.fontStyle,
+      color: statusTextColor,
+      fontSize: baseFontSize,
+      withShadow: imageBytes != null || !current.withPill,
+      isBold: current.isBold,
+      isItalic: current.isItalic,
+    ).copyWith(height: 1.32);
+    final pillColor = statusTextColor.computeLuminance() > 0.6
+        ? Colors.black.withValues(alpha: 0.6)
+        : Colors.white.withValues(alpha: 0.85);
 
     return Scaffold(
       backgroundColor: bgStart,
@@ -632,18 +618,64 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen>
                     ),
                   )
               else
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: Text(
-                        current.text,
-                        textAlign: textAlign,
-                        style: textStyle,
-                      ),
-                    ),
-                  ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cw = constraints.maxWidth;
+                    final ch = constraints.maxHeight;
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (imageBytes != null) ...[
+                          Image.memory(
+                            imageBytes,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
+                          ColoredBox(
+                            color: Colors.black.withValues(alpha: 0.25),
+                          ),
+                        ],
+                        Positioned(
+                          left: current.textPosX * cw,
+                          top: current.textPosY * ch,
+                          child: FractionalTranslation(
+                            translation: const Offset(-0.5, -0.5),
+                            child: Transform.rotate(
+                              angle: current.textRotation,
+                              child: Transform.scale(
+                                scale: current.textScale,
+                                child: Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth: cw * 0.86,
+                                  ),
+                                  padding: current.withPill
+                                      ? const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 8,
+                                        )
+                                      : const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                  decoration: current.withPill
+                                      ? BoxDecoration(
+                                          color: pillColor,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        )
+                                      : null,
+                                  child: Text(
+                                    current.text,
+                                    textAlign: textAlign,
+                                    style: textStyle,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
 
             // Barra superior sutil para legibilidade dos controles sobre fotos claras

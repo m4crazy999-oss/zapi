@@ -91,7 +91,8 @@ class _AppLockOverlayState extends ConsumerState<AppLockOverlay> {
   Widget build(BuildContext context) {
     final prefs = ref.watch(chatPreferencesProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? AppColors.darkBackground : AppColors.lightBackground;
+    final bgColor =
+        isDark ? AppColors.darkBackground : AppColors.lightBackground;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
     final showDeviceButton =

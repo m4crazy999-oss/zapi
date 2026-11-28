@@ -7,23 +7,28 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../widgets/chat_wallpaper.dart';
+import 'app_colors.dart';
 
 class AppearanceState {
   const AppearanceState({
     this.themeMode = ThemeMode.system,
     this.wallpaperId = 'default_pattern',
+    this.accentId = 'esmeralda',
   });
 
   final ThemeMode themeMode;
   final String wallpaperId;
+  final String accentId;
 
   AppearanceState copyWith({
     ThemeMode? themeMode,
     String? wallpaperId,
+    String? accentId,
   }) {
     return AppearanceState(
       themeMode: themeMode ?? this.themeMode,
       wallpaperId: wallpaperId ?? this.wallpaperId,
+      accentId: accentId ?? this.accentId,
     );
   }
 }
@@ -55,6 +60,7 @@ class AppearanceNotifier extends Notifier<AppearanceState> {
 
       final rawTheme = decoded['themeMode'];
       final rawWallpaper = decoded['wallpaperId'];
+      final rawAccent = decoded['accentId'];
 
       final mode = switch (rawTheme) {
         'light' => ThemeMode.light,
@@ -64,11 +70,15 @@ class AppearanceNotifier extends Notifier<AppearanceState> {
       final preset = ChatWallpaperPreset.fromId(
         rawWallpaper is String ? rawWallpaper : null,
       );
+      final accent = AccentPreset.fromId(
+        rawAccent is String ? rawAccent : null,
+      );
 
       if (ref.mounted) {
         state = AppearanceState(
           themeMode: mode,
           wallpaperId: preset.id,
+          accentId: accent.id,
         );
       }
     } catch (_) {}
@@ -86,6 +96,7 @@ class AppearanceNotifier extends Notifier<AppearanceState> {
         jsonEncode({
           'themeMode': themeStr,
           'wallpaperId': state.wallpaperId,
+          'accentId': state.accentId,
         }),
         flush: true,
       );
@@ -104,6 +115,12 @@ class AppearanceNotifier extends Notifier<AppearanceState> {
     state = state.copyWith(wallpaperId: preset.id);
     await _saveToDisk();
   }
+
+  Future<void> setAccent(AccentPreset preset) async {
+    if (state.accentId == preset.id) return;
+    state = state.copyWith(accentId: preset.id);
+    await _saveToDisk();
+  }
 }
 
 final appearanceProvider =
@@ -117,4 +134,8 @@ final themeModeProvider = Provider<ThemeMode>(
 
 final chatWallpaperProvider = Provider<ChatWallpaperPreset>(
   (ref) => ChatWallpaperPreset.fromId(ref.watch(appearanceProvider).wallpaperId),
+);
+
+final accentPresetProvider = Provider<AccentPreset>(
+  (ref) => AccentPreset.fromId(ref.watch(appearanceProvider).accentId),
 );

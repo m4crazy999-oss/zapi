@@ -119,7 +119,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
           'about', 'bannerPreset', 'bannerBase64', 'createdAt', 'lastSeen', 'blockedUids',
-          'activeChatId', 'hideLastSeen', 'hideReadReceipts'
+          'activeChatId', 'hideLastSeen', 'hideReadReceipts', 'addPrivacy'
         ])
         && data.uid == uid
         && data.displayName is string
@@ -138,7 +138,8 @@ service cloud.firestore {
         && (!('blockedUids' in data) || data.blockedUids is list)
         && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string)
         && (!('hideLastSeen' in data) || data.hideLastSeen is bool)
-        && (!('hideReadReceipts' in data) || data.hideReadReceipts is bool);
+        && (!('hideReadReceipts' in data) || data.hideReadReceipts is bool)
+        && (!('addPrivacy' in data) || data.addPrivacy == null || data.addPrivacy in ['all', 'idOnly', 'usernameOnly']);
     }
 
     // Alterado: proíbe email/allowEmailSearch após gravação, mantém publicId imutável após definido e permite migração de contas antigas pelo dono.
@@ -147,7 +148,7 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'uid', 'displayName', 'username', 'publicId', 'photoBase64', 'photoUrl',
           'about', 'bannerPreset', 'bannerBase64', 'createdAt', 'lastSeen', 'blockedUids',
-          'activeChatId', 'hideLastSeen', 'hideReadReceipts'
+          'activeChatId', 'hideLastSeen', 'hideReadReceipts', 'addPrivacy'
         ])
         && data.uid == resource.data.uid
         && data.createdAt == resource.data.createdAt
@@ -172,7 +173,8 @@ service cloud.firestore {
         && (!('blockedUids' in data) || data.blockedUids is list)
         && (!('activeChatId' in data) || data.activeChatId == null || data.activeChatId is string)
         && (!('hideLastSeen' in data) || data.hideLastSeen is bool)
-        && (!('hideReadReceipts' in data) || data.hideReadReceipts is bool);
+        && (!('hideReadReceipts' in data) || data.hideReadReceipts is bool)
+        && (!('addPrivacy' in data) || data.addPrivacy == null || data.addPrivacy in ['all', 'idOnly', 'usernameOnly']);
     }
 
     match /users/{uid} {
@@ -435,6 +437,8 @@ service cloud.firestore {
           'id', 'ownerUid', 'ownerName', 'ownerUsername', 'ownerPhotoBase64',
           'type', 'text', 'backgroundColor', 'backgroundGradientEnd',
           'textColor', 'fontStyle', 'textAlign', 'fontSize',
+          'textPosX', 'textPosY', 'textScale', 'textRotation',
+          'isBold', 'isItalic', 'withPill',
           'imageBase64', 'videoBase64', 'durationMs',
           'privacyMode', 'allowedUids', 'createdAt', 'expiresAt'
         ])
@@ -452,6 +456,13 @@ service cloud.firestore {
         && (!('fontStyle' in request.resource.data) || request.resource.data.fontStyle == null || (request.resource.data.fontStyle is string && request.resource.data.fontStyle.size() <= 24))
         && (!('textAlign' in request.resource.data) || request.resource.data.textAlign == null || (request.resource.data.textAlign is string && request.resource.data.textAlign.size() <= 16))
         && (!('fontSize' in request.resource.data) || request.resource.data.fontSize == null || (request.resource.data.fontSize is number && request.resource.data.fontSize >= 12 && request.resource.data.fontSize <= 48))
+        && (!('textPosX' in request.resource.data) || request.resource.data.textPosX == null || (request.resource.data.textPosX is number && request.resource.data.textPosX >= 0 && request.resource.data.textPosX <= 1))
+        && (!('textPosY' in request.resource.data) || request.resource.data.textPosY == null || (request.resource.data.textPosY is number && request.resource.data.textPosY >= 0 && request.resource.data.textPosY <= 1))
+        && (!('textScale' in request.resource.data) || request.resource.data.textScale == null || (request.resource.data.textScale is number && request.resource.data.textScale >= 0.3 && request.resource.data.textScale <= 4))
+        && (!('textRotation' in request.resource.data) || request.resource.data.textRotation == null || (request.resource.data.textRotation is number && request.resource.data.textRotation >= -6.3 && request.resource.data.textRotation <= 6.3))
+        && (!('isBold' in request.resource.data) || request.resource.data.isBold == null || request.resource.data.isBold is bool)
+        && (!('isItalic' in request.resource.data) || request.resource.data.isItalic == null || request.resource.data.isItalic is bool)
+        && (!('withPill' in request.resource.data) || request.resource.data.withPill == null || request.resource.data.withPill is bool)
         && (!('durationMs' in request.resource.data) || request.resource.data.durationMs == null || (request.resource.data.durationMs is int && request.resource.data.durationMs >= 0 && request.resource.data.durationMs <= 60000))
         && (
           request.resource.data.get('imageBase64', null) == null

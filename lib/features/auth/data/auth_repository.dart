@@ -34,6 +34,7 @@ class AuthRepository {
     'activeChatId',
     'hideLastSeen',
     'hideReadReceipts',
+    'addPrivacy',
   };
 
   Stream<User?> authStateChanges() => _auth.authStateChanges();
@@ -178,6 +179,7 @@ class AuthRepository {
           'activeChatId': null,
           'hideLastSeen': false,
           'hideReadReceipts': false,
+          'addPrivacy': 'all',
         });
 
         if (email.isNotEmpty) {

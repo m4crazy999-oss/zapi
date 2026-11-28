@@ -1,11 +1,14 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/chat_preferences_service.dart';
+import '../../../../core/services/media_cache_service.dart';
 import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
@@ -16,6 +19,7 @@ import '../../../../core/widgets/profile_header_actions.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../chats/domain/chat_message.dart';
 import '../../../chats/presentation/providers/chats_providers.dart';
 import '../../../contacts/domain/app_contact.dart';
 import '../../../contacts/presentation/providers/contacts_providers.dart';
@@ -284,6 +288,103 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
     }
   }
 
+  static final RegExp _linkRegex = RegExp(
+    r'(https?://[^\s]+|www\.[^\s]+)',
+    caseSensitive: false,
+  );
+
+  List<({String url, ChatMessage message})> _extractSharedLinks(
+    List<ChatMessage> messages,
+  ) {
+    final items = <({String url, ChatMessage message})>[];
+    for (final msg in messages) {
+      if (!msg.isText || msg.text.trim().isEmpty) continue;
+      for (final match in _linkRegex.allMatches(msg.text)) {
+        final raw = match.group(0)?.trim() ?? '';
+        if (raw.isNotEmpty) {
+          items.add((url: raw, message: msg));
+        }
+      }
+    }
+    return items;
+  }
+
+  Future<void> _openSharedMediaMessage(ChatMessage msg) async {
+    final mediaId = msg.mediaId?.trim();
+    if (mediaId == null || mediaId.isEmpty) {
+      if (msg.isImage && (msg.thumbnailBase64?.trim().isNotEmpty ?? false)) {
+        _openFullPhoto(
+          title: msg.text.trim().isNotEmpty ? msg.text.trim() : 'Foto',
+          photoBase64: msg.thumbnailBase64,
+        );
+      }
+      return;
+    }
+
+    try {
+      final file = await ref.read(mediaCacheServiceProvider).getOrFetchChatMedia(
+            chatId: widget.chatId,
+            mediaId: mediaId,
+            mimeType: msg.mimeType,
+            fileName: msg.fileName,
+          );
+      if (!mounted) return;
+      if (file == null) {
+        ZapiToast.showInfo(context, 'Mídia não disponível no momento.');
+        return;
+      }
+      if (msg.isImage) {
+        final b64 = base64Encode(await file.readAsBytes());
+        if (!mounted) return;
+        _openFullPhoto(
+          title: msg.text.trim().isNotEmpty ? msg.text.trim() : 'Foto',
+          photoBase64: b64,
+        );
+        return;
+      }
+      final result = await OpenFilex.open(file.path, type: msg.mimeType);
+      if (!mounted) return;
+      if (result.type != ResultType.done) {
+        ZapiToast.showInfo(
+          context,
+          'Nenhum aplicativo encontrado para abrir este arquivo.',
+        );
+      }
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      ZapiToast.showError(context, 'Não foi possível abrir esta mídia agora.');
+    }
+  }
+
+  void _openSharedMediaSheet({
+    required List<ChatMessage> mediaItems,
+    required List<ChatMessage> fileItems,
+    required List<({String url, ChatMessage message})> linkItems,
+    int initialTab = 0,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetCtx) => _SharedMediaSheet(
+        mediaItems: mediaItems,
+        fileItems: fileItems,
+        linkItems: linkItems,
+        initialTab: initialTab,
+        onOpenMedia: (msg) => _openSharedMediaMessage(msg),
+        onCopyLink: (url) async {
+          await _copyText(url, 'Link');
+          if (sheetCtx.mounted) {
+            ZapiToast.showInfo(sheetCtx, 'Link copiado.');
+          }
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final peerUid = _peerUid;
@@ -294,6 +395,17 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
     final presence = ref.watch(userPresenceProvider(peerUid)).value ??
         UserPresence.offline;
     final isMuted = ref.watch(chatPreferencesProvider).isMuted(widget.chatId);
+    final rawMessages = ref
+            .watch(chatMessagesProvider((chatId: widget.chatId, limit: 100)))
+            .value ??
+        const <ChatMessage>[];
+    final visibleMessages = rawMessages
+        .where((m) => !m.deletedForEveryone && !m.isHiddenFor(_myUid))
+        .toList();
+    final sharedMedia =
+        visibleMessages.where((m) => m.isImage || m.isVideo).toList();
+    final sharedFiles = visibleMessages.where((m) => m.isFile).toList();
+    final sharedLinks = _extractSharedLinks(visibleMessages);
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
@@ -518,6 +630,109 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.perm_media_rounded,
+                          size: 18,
+                          color: isDark
+                              ? AppColors.emeraldBright
+                              : AppColors.emeraldDark,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Mídias, arquivos e links',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: secondaryText,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => _openSharedMediaSheet(
+                            mediaItems: sharedMedia,
+                            fileItems: sharedFiles,
+                            linkItems: sharedLinks,
+                          ),
+                          child: Text(
+                            '${sharedMedia.length + sharedFiles.length + sharedLinks.length}',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.photo_library_rounded, size: 16),
+                          label: Text('${sharedMedia.length} mídias'),
+                          onPressed: () => _openSharedMediaSheet(
+                            mediaItems: sharedMedia,
+                            fileItems: sharedFiles,
+                            linkItems: sharedLinks,
+                            initialTab: 0,
+                          ),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.insert_drive_file_rounded, size: 16),
+                          label: Text('${sharedFiles.length} arquivos'),
+                          onPressed: () => _openSharedMediaSheet(
+                            mediaItems: sharedMedia,
+                            fileItems: sharedFiles,
+                            linkItems: sharedLinks,
+                            initialTab: 1,
+                          ),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.link_rounded, size: 16),
+                          label: Text('${sharedLinks.length} links'),
+                          onPressed: () => _openSharedMediaSheet(
+                            mediaItems: sharedMedia,
+                            fileItems: sharedFiles,
+                            linkItems: sharedLinks,
+                            initialTab: 2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (sharedMedia.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 66,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount:
+                              sharedMedia.length > 8 ? 8 : sharedMedia.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final msg = sharedMedia[index];
+                            return _MediaThumbTile(
+                              message: msg,
+                              size: 66,
+                              onTap: () => _openSharedMediaMessage(msg),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
               child: Column(
                 children: [
                   SwitchListTile(
@@ -580,15 +795,27 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => _editNickname(savedContact),
                     ),
-                    const Divider(height: 1),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Card(
+              child: Column(
+                children: [
+                  if (savedContact != null) ...[
                     ListTile(
                       enabled: !_isUpdatingContact,
                       leading: const Icon(Icons.person_remove_rounded),
                       title: const Text('Remover dos contatos'),
-                      onTap: () => _removeContact(savedContact, targetForContact),
+                      onTap: () =>
+                          _removeContact(savedContact, targetForContact),
                     ),
+                    const Divider(height: 1),
                   ],
-                  const Divider(height: 1),
                   ListTile(
                     enabled: !_isUpdatingBlock,
                     leading: Icon(
@@ -617,6 +844,230 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MediaThumbTile extends StatelessWidget {
+  const _MediaThumbTile({
+    required this.message,
+    required this.size,
+    required this.onTap,
+  });
+
+  final ChatMessage message;
+  final double size;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final rawThumb = message.thumbnailBase64?.trim();
+    Uint8List? thumbBytes;
+    if (rawThumb != null && rawThumb.isNotEmpty) {
+      try {
+        thumbBytes = base64Decode(
+          rawThumb.contains(',') ? rawThumb.split(',').last : rawThumb,
+        );
+      } catch (_) {}
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: size,
+          height: size,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumbBytes != null)
+                Image.memory(
+                  thumbBytes,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                )
+              else
+                Icon(
+                  message.isVideo
+                      ? Icons.videocam_rounded
+                      : Icons.image_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              if (message.isVideo)
+                const Center(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(6),
+                      child: Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SharedMediaSheet extends StatelessWidget {
+  const _SharedMediaSheet({
+    required this.mediaItems,
+    required this.fileItems,
+    required this.linkItems,
+    required this.initialTab,
+    required this.onOpenMedia,
+    required this.onCopyLink,
+  });
+
+  final List<ChatMessage> mediaItems;
+  final List<ChatMessage> fileItems;
+  final List<({String url, ChatMessage message})> linkItems;
+  final int initialTab;
+  final Future<void> Function(ChatMessage msg) onOpenMedia;
+  final Future<void> Function(String url) onCopyLink;
+
+  String _formatBytes(int? bytes) {
+    if (bytes == null || bytes <= 0) return '';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.72,
+      minChildSize: 0.45,
+      maxChildSize: 0.92,
+      builder: (context, scrollController) {
+        return DefaultTabController(
+          length: 3,
+          initialIndex: initialTab.clamp(0, 2),
+          child: Column(
+            children: [
+              const TabBar(
+                tabs: [
+                  Tab(text: 'Mídias'),
+                  Tab(text: 'Arquivos'),
+                  Tab(text: 'Links'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    if (mediaItems.isEmpty)
+                      const Center(child: Text('Nenhuma foto ou vídeo ainda.'))
+                    else
+                      GridView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(14),
+                        itemCount: mediaItems.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        itemBuilder: (context, index) {
+                          final msg = mediaItems[index];
+                          return _MediaThumbTile(
+                            message: msg,
+                            size: double.infinity,
+                            onTap: () => onOpenMedia(msg),
+                          );
+                        },
+                      ),
+                    if (fileItems.isEmpty)
+                      const Center(child: Text('Nenhum arquivo ainda.'))
+                    else
+                      ListView.separated(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(14),
+                        itemCount: fileItems.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final msg = fileItems[index];
+                          final sizeLabel = _formatBytes(msg.sizeBytes);
+                          final timeLabel = DateFormatter.formatTime(
+                            msg.effectiveTime,
+                          );
+                          return ListTile(
+                            leading: const CircleAvatar(
+                              child: Icon(Icons.insert_drive_file_rounded),
+                            ),
+                            title: Text(
+                              msg.fileName ?? 'Arquivo',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              sizeLabel.isNotEmpty
+                                  ? '$sizeLabel • $timeLabel'
+                                  : timeLabel,
+                            ),
+                            trailing: const Icon(Icons.open_in_new_rounded),
+                            onTap: () => onOpenMedia(msg),
+                          );
+                        },
+                      ),
+                    if (linkItems.isEmpty)
+                      const Center(child: Text('Nenhum link encontrado.'))
+                    else
+                      ListView.separated(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(14),
+                        itemCount: linkItems.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final entry = linkItems[index];
+                          return ListTile(
+                            leading: const CircleAvatar(
+                              child: Icon(Icons.link_rounded),
+                            ),
+                            title: Text(
+                              entry.url,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              DateFormatter.formatTime(
+                                entry.message.effectiveTime,
+                              ),
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.copy_rounded),
+                              tooltip: 'Copiar link',
+                              onPressed: () => onCopyLink(entry.url),
+                            ),
+                            onTap: () => onCopyLink(entry.url),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

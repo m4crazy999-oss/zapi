@@ -17,69 +17,14 @@ import '../../features/stickers/presentation/widgets/zapi_sticker_image.dart';
 import '../constants/app_constants.dart';
 import '../theme/app_colors.dart';
 import '../utils/zapi_toast.dart';
+import 'editor/editor_models.dart';
+import 'editor/editor_overlay_canvas.dart';
 
 enum _EditorTool {
   none,
   draw,
   crop,
-}
-
-class _DrawStroke {
-  _DrawStroke({
-    required this.points,
-    required this.color,
-    required this.widthFraction,
-  });
-
-  final List<Offset> points; // coordenadas normalizadas 0..1 sobre a foto
-  final Color color;
-  final double widthFraction; // proporção da largura da foto
-}
-
-class _TextOverlayItem {
-  _TextOverlayItem({
-    required this.id,
-    required this.text,
-    required this.color,
-    required this.fontKey,
-    required this.withPill,
-    this.nx = 0.5,
-    this.ny = 0.45,
-    this.scale = 1.0,
-    this.rotation = 0.0,
-  });
-
-  final String id;
-  String text;
-  Color color;
-  String fontKey; // 'sans' | 'serif' | 'mono' | 'display'
-  bool withPill;
-  double nx;
-  double ny;
-  double scale;
-  double rotation;
-}
-
-class _StickerOverlayItem {
-  _StickerOverlayItem({
-    required this.id,
-    this.emoji,
-    this.stickerImage,
-    this.stickerBytes,
-    this.nx = 0.5,
-    this.ny = 0.5,
-    this.scale = 1.0,
-    this.rotation = 0.0,
-  });
-
-  final String id;
-  final String? emoji;
-  final ui.Image? stickerImage;
-  final Uint8List? stickerBytes;
-  double nx;
-  double ny;
-  double scale;
-  double rotation;
+  filter,
 }
 
 class _EditablePhotoDoc {
@@ -93,10 +38,14 @@ class _EditablePhotoDoc {
   ui.Image baseImage;
   String caption;
 
-  final List<_DrawStroke> strokes = [];
-  final List<_DrawStroke> redoStrokes = [];
-  final List<_TextOverlayItem> textOverlays = [];
-  final List<_StickerOverlayItem> stickerOverlays = [];
+  PhotoFilterPreset filterPreset = PhotoFilterPreset.original;
+  double brightness = 0.0;
+  bool hasGeometryEdit = false;
+
+  final List<DrawStroke> strokes = [];
+  final List<DrawStroke> redoStrokes = [];
+  final List<TextOverlayItem> textOverlays = [];
+  final List<StickerOverlayItem> stickerOverlays = [];
 
   void disposeImages() {
     baseImage.dispose();
@@ -147,7 +96,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
   _EditorTool _tool = _EditorTool.none;
   Color _drawColor = _palette[5];
   double _strokeWidthFraction = 0.011;
-  _DrawStroke? _activeStroke;
+  DrawStroke? _activeStroke;
 
   // Estado temporário do modo Recorte
   Rect _cropRect = const Rect.fromLTWH(0.05, 0.05, 0.9, 0.9);
@@ -211,6 +160,54 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
 
   _EditablePhotoDoc get _currentDoc => _docs[_activeIndex];
 
+  bool get _hasUnsavedChanges {
+    if (_captionController.text.trim().isNotEmpty) return true;
+    return _docs.any(
+      (d) =>
+          d.strokes.isNotEmpty ||
+          d.textOverlays.isNotEmpty ||
+          d.stickerOverlays.isNotEmpty ||
+          d.filterPreset != PhotoFilterPreset.original ||
+          d.brightness.abs() >= 0.01 ||
+          d.hasGeometryEdit ||
+          d.caption.trim().isNotEmpty,
+    );
+  }
+
+  Future<void> _confirmDiscardAndClose() async {
+    if (_exporting) return;
+    if (!_hasUnsavedChanges) {
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Descartar alterações?'),
+        content: const Text(
+          'As edições feitas nesta foto ainda não foram enviadas.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Continuar editando'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Descartar'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   void _switchPhoto(int index) {
     if (index == _activeIndex || index < 0 || index >= _docs.length) return;
     _currentDoc.caption = _captionController.text;
@@ -270,6 +267,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
     src.dispose();
     setState(() {
       doc.baseImage = rotated;
+      doc.hasGeometryEdit = true;
     });
   }
 
@@ -326,6 +324,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
     src.dispose();
     setState(() {
       doc.baseImage = cropped;
+      doc.hasGeometryEdit = true;
       _tool = _EditorTool.none;
       _cropRect = const Rect.fromLTWH(0.05, 0.05, 0.9, 0.9);
       _cropAspect = null;
@@ -357,51 +356,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
     });
   }
 
-  TextStyle _buildOverlayTextStyle({
-    required String fontKey,
-    required Color color,
-    required double fontSize,
-  }) {
-    final shadow = [
-      Shadow(
-        color: Colors.black.withValues(alpha: 0.48),
-        blurRadius: 6,
-        offset: const Offset(0, 2),
-      ),
-    ];
-
-    return switch (fontKey) {
-      'serif' => TextStyle(
-          fontFamily: 'serif',
-          fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          color: color,
-          shadows: shadow,
-        ),
-      'mono' => TextStyle(
-          fontFamily: 'monospace',
-          fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          color: color,
-          shadows: shadow,
-        ),
-      'display' => TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w900,
-          letterSpacing: -0.6,
-          color: color,
-          shadows: shadow,
-        ),
-      _ => TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          color: color,
-          shadows: shadow,
-        ),
-    };
-  }
-
-  Future<void> _openTextDialog({_TextOverlayItem? editing}) async {
+  Future<void> _openTextDialog({TextOverlayItem? editing}) async {
     final controller = TextEditingController(text: editing?.text ?? '');
     var pickedColor = editing?.color ?? Colors.white;
     var fontKey = editing?.fontKey ?? 'sans';
@@ -473,7 +428,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                       minLines: 1,
                       textAlign: TextAlign.center,
                       textCapitalization: TextCapitalization.sentences,
-                      style: _buildOverlayTextStyle(
+                      style: buildEditorOverlayTextStyle(
                         fontKey: fontKey,
                         color: pickedColor,
                         fontSize: 24,
@@ -585,7 +540,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
           ..withPill = withPill;
       } else {
         _currentDoc.textOverlays.add(
-          _TextOverlayItem(
+          TextOverlayItem(
             id: _uuid.v4(),
             text: text,
             color: pickedColor,
@@ -611,7 +566,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
     if (selected.emoji != null) {
       setState(() {
         _currentDoc.stickerOverlays.add(
-          _StickerOverlayItem(
+          StickerOverlayItem(
             id: _uuid.v4(),
             emoji: selected.emoji,
           ),
@@ -636,7 +591,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
       }
       setState(() {
         _currentDoc.stickerOverlays.add(
-          _StickerOverlayItem(
+          StickerOverlayItem(
             id: _uuid.v4(),
             stickerImage: frame.image,
             stickerBytes: bytes,
@@ -686,11 +641,19 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // 1. Imagem base
+    // 1. Imagem base com filtro e brilho aplicados
+    final activeFilter = PhotoFilterPreset.buildColorFilter(
+      doc.filterPreset,
+      doc.brightness,
+    );
+    final basePaint = Paint()..filterQuality = FilterQuality.high;
+    if (activeFilter != null) {
+      basePaint.colorFilter = activeFilter;
+    }
     canvas.drawImage(
       src,
       Offset.zero,
-      Paint()..filterQuality = FilterQuality.high,
+      basePaint,
     );
 
     // 2. Traços de desenho livre
@@ -760,7 +723,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
       final tp = TextPainter(
         text: TextSpan(
           text: textItem.text,
-          style: _buildOverlayTextStyle(
+          style: buildEditorOverlayTextStyle(
             fontKey: textItem.fontKey,
             color: textItem.color,
             fontSize: (baseUnit * 0.068).clamp(24.0, 72.0),
@@ -829,21 +792,33 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                 ? 'Enviar para ${widget.recipientName}'
                 : 'Enviar foto'));
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Barra superior de ferramentas
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: 'Fechar editor',
-                    onPressed: _exporting ? null : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded, color: Colors.white),
-                  ),
+    final activeFilter = PhotoFilterPreset.buildColorFilter(
+      doc.filterPreset,
+      doc.brightness,
+    );
+
+    return PopScope(
+      canPop: !_hasUnsavedChanges || _exporting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          _confirmDiscardAndClose();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Barra superior de ferramentas
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Fechar editor',
+                      onPressed: _exporting ? null : _confirmDiscardAndClose,
+                      icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    ),
                   const Spacer(),
                   if (_tool == _EditorTool.draw) ...[
                     IconButton(
@@ -879,6 +854,16 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                       ),
                     ),
                   ],
+                  _EditorToolButton(
+                    icon: Icons.tune_rounded,
+                    tooltip: 'Filtros e brilho',
+                    active: _tool == _EditorTool.filter,
+                    onTap: () => setState(() {
+                      _tool = _tool == _EditorTool.filter
+                          ? _EditorTool.none
+                          : _EditorTool.filter;
+                    }),
+                  ),
                   _EditorToolButton(
                     icon: Icons.crop_rotate_rounded,
                     tooltip: 'Recortar e girar',
@@ -923,6 +908,84 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                 ],
               ),
             ),
+
+            // Controles contextuais do modo Filtros e Brilho
+            if (_tool == _EditorTool.filter)
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: 36,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: PhotoFilterPreset.values.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (_, idx) {
+                          final preset = PhotoFilterPreset.values[idx];
+                          final selected = doc.filterPreset == preset;
+                          return ChoiceChip(
+                            label: Text(
+                              preset.label,
+                              style: TextStyle(
+                                color: selected ? Colors.white : Colors.white70,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            selected: selected,
+                            selectedColor: AppColors.emerald,
+                            backgroundColor: AppColors.darkSurfaceAlt,
+                            side: BorderSide(
+                              color: selected
+                                  ? AppColors.emeraldBright
+                                  : Colors.white24,
+                            ),
+                            showCheckmark: false,
+                            visualDensity: VisualDensity.compact,
+                            onSelected: (_) =>
+                                setState(() => doc.filterPreset = preset),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.brightness_6_rounded,
+                          color: Colors.white70,
+                          size: 18,
+                        ),
+                        Expanded(
+                          child: Slider(
+                            value: doc.brightness,
+                            min: -0.35,
+                            max: 0.35,
+                            divisions: 28,
+                            activeColor: AppColors.emeraldBright,
+                            inactiveColor: Colors.white24,
+                            onChanged: (v) =>
+                                setState(() => doc.brightness = v),
+                          ),
+                        ),
+                        if (doc.brightness.abs() >= 0.01)
+                          TextButton(
+                            onPressed: () =>
+                                setState(() => doc.brightness = 0.0),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white70,
+                              minimumSize: const Size(44, 32),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 6),
+                            ),
+                            child: const Text('Zerar'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
 
             // Controles contextuais do modo Desenhar
             if (_tool == _EditorTool.draw)
@@ -1062,15 +1125,23 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                         clipBehavior: Clip.none,
                         children: [
                           Positioned.fill(
-                            child: RawImage(
-                              image: img,
-                              fit: BoxFit.fill,
-                            ),
+                            child: activeFilter != null
+                                ? ColorFiltered(
+                                    colorFilter: activeFilter,
+                                    child: RawImage(
+                                      image: img,
+                                      fit: BoxFit.fill,
+                                    ),
+                                  )
+                                : RawImage(
+                                    image: img,
+                                    fit: BoxFit.fill,
+                                  ),
                           ),
                           // Camada de desenho livre
                           Positioned.fill(
                             child: CustomPaint(
-                              painter: _CanvasStrokesPainter(
+                              painter: EditorStrokesPainter(
                                 strokes: doc.strokes,
                                 activeStroke: _activeStroke,
                               ),
@@ -1087,7 +1158,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                                   );
                                   setState(() {
                                     doc.redoStrokes.clear();
-                                    _activeStroke = _DrawStroke(
+                                    _activeStroke = DrawStroke(
                                       points: [pt],
                                       color: _drawColor,
                                       widthFraction: _strokeWidthFraction,
@@ -1286,7 +1357,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                                         child: Text(
                                           t.text,
                                           textAlign: TextAlign.center,
-                                          style: _buildOverlayTextStyle(
+                                          style: buildEditorOverlayTextStyle(
                                             fontKey: t.fontKey,
                                             color: t.color,
                                             fontSize: (baseUnit * 0.068)
@@ -1302,53 +1373,9 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
 
                           // Área de exclusão ao arrastar texto/emoji/figurinha para baixo
                           if (_isDraggingOverlay && _activeOverlayId != null)
-                            Positioned(
-                              bottom: 12,
-                              left: 0,
-                              right: 0,
-                              child: Center(
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 120),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: _overTrash
-                                        ? const Color(0xFFDC2626)
-                                        : Colors.black.withValues(alpha: 0.68),
-                                    borderRadius: BorderRadius.circular(24),
-                                    border: Border.all(
-                                      color: _overTrash
-                                          ? Colors.white
-                                          : Colors.white38,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.delete_rounded,
-                                        color: Colors.white,
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        _overTrash
-                                            ? 'Solte para apagar'
-                                            : (_activeOverlayIsText
-                                                ? 'Arraste aqui para apagar texto'
-                                                : 'Arraste aqui para apagar'),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                            EditorTrashZone(
+                              overTrash: _overTrash,
+                              isText: _activeOverlayIsText,
                             ),
 
                           // Grade interativa do modo Recorte
@@ -1488,6 +1515,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
           ],
         ),
       ),
+      ),
     );
   }
 }
@@ -1566,62 +1594,6 @@ class _CropChip extends StatelessWidget {
       ),
     );
   }
-}
-
-class _CanvasStrokesPainter extends CustomPainter {
-  const _CanvasStrokesPainter({
-    required this.strokes,
-    required this.activeStroke,
-  });
-
-  final List<_DrawStroke> strokes;
-  final _DrawStroke? activeStroke;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final all = [
-      ...strokes,
-      if (activeStroke != null) activeStroke!,
-    ];
-
-    for (final stroke in all) {
-      if (stroke.points.isEmpty) continue;
-      final paint = Paint()
-        ..color = stroke.color
-        ..strokeWidth = (stroke.widthFraction * size.width).clamp(2.0, 22.0)
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
-
-      if (stroke.points.length == 1) {
-        final pt = Offset(
-          stroke.points.first.dx * size.width,
-          stroke.points.first.dy * size.height,
-        );
-        canvas.drawCircle(
-          pt,
-          paint.strokeWidth / 2,
-          paint..style = PaintingStyle.fill,
-        );
-      } else {
-        final path = Path()
-          ..moveTo(
-            stroke.points.first.dx * size.width,
-            stroke.points.first.dy * size.height,
-          );
-        for (var i = 1; i < stroke.points.length; i++) {
-          path.lineTo(
-            stroke.points[i].dx * size.width,
-            stroke.points[i].dy * size.height,
-          );
-        }
-        canvas.drawPath(path, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _CanvasStrokesPainter oldDelegate) => true;
 }
 
 class _InteractiveCropOverlay extends StatelessWidget {

@@ -166,14 +166,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/settings',
-                builder: (context, state) => const SettingsScreen(),
-              ),
-            ],
-          ),
         ],
       ),
       GoRoute(
@@ -208,6 +200,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
             _buildSmoothPage(state, const ProfileScreen()),
+      ),
+      GoRoute(
+        path: '/settings',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _buildSmoothPage(state, const SettingsScreen()),
       ),
       GoRoute(
         path: '/stickers/create',

@@ -181,7 +181,8 @@ class MainActivity : FlutterActivity() {
                 "setNotificationPrefs" -> {
                     val sound = call.argument<Boolean>("sound") ?: true
                     val vibration = call.argument<Boolean>("vibration") ?: true
-                    ZapiMessageNotifier.setSoundAndVibration(this, sound, vibration)
+                    val hidePreview = call.argument<Boolean>("hidePreview")
+                    ZapiMessageNotifier.setSoundAndVibration(this, sound, vibration, hidePreview)
                     result.success(null)
                 }
 
@@ -243,6 +244,7 @@ class MainActivity : FlutterActivity() {
                     val startMs = call.argument<Number>("startMs")?.toLong() ?: 0L
                     val endMs = call.argument<Number>("endMs")?.toLong() ?: 0L
                     val maxBytes = call.argument<Number>("maxBytes")?.toLong() ?: (700L * 1024L)
+                    val removeAudio = call.argument<Boolean>("removeAudio") ?: false
                     ioExecutor.execute {
                         ZapiVideoTranscoder.trimAndCompress(
                             context = applicationContext,
@@ -250,6 +252,7 @@ class MainActivity : FlutterActivity() {
                             startMs = startMs,
                             endMs = endMs,
                             maxBytes = maxBytes,
+                            removeAudio = removeAudio,
                             onComplete = { map ->
                                 mainHandler.post { result.success(map) }
                             },

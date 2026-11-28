@@ -67,7 +67,7 @@ class AppConstants {
   static const int maxStatusImageBase64Chars = 620000;
   static const int maxStatusVideoBytes = 700 * 1024;
   static const int maxStatusVideoBase64Chars = 960000;
-  static const Duration maxStatusVideoDuration = Duration(seconds: 60);
+  static const Duration maxStatusVideoDuration = Duration(seconds: 30);
   static const int statusDurationHours = 24;
 
   static const String defaultBannerPreset = 'aurora';

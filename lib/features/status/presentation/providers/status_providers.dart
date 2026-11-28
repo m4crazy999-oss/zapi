@@ -90,3 +90,15 @@ final statusBoardProvider = Provider<AsyncValue<StatusBoardData>>((ref) {
     return (recent: recent, viewed: viewed, muted: muted);
   });
 });
+
+final unifiedStatusGroupsProvider =
+    Provider<AsyncValue<List<ContactStatusGroup>>>((ref) {
+  final boardAsync = ref.watch(statusBoardProvider);
+  return boardAsync.whenData(
+    (board) => [
+      ...board.recent,
+      ...board.viewed,
+      ...board.muted,
+    ],
+  );
+});

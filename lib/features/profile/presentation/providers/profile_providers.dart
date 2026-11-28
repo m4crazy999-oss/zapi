@@ -150,6 +150,7 @@ class ProfileController extends AsyncNotifier<void> {
   Future<void> updatePrivacy({
     bool? hideLastSeen,
     bool? hideReadReceipts,
+    String? addPrivacy,
   }) async {
     final user = ref.read(firebaseAuthProvider).currentUser;
     if (user == null) return;
@@ -159,6 +160,7 @@ class ProfileController extends AsyncNotifier<void> {
             uid: user.uid,
             hideLastSeen: hideLastSeen,
             hideReadReceipts: hideReadReceipts,
+            addPrivacy: addPrivacy,
           );
     } catch (error) {
       throw FirebaseErrorMapper.map(error);

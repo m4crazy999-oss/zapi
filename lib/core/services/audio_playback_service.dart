@@ -9,6 +9,8 @@ import 'package:just_audio/just_audio.dart';
 class AudioPlaybackState {
   const AudioPlaybackState({
     this.activeMessageId,
+    this.activeChatId,
+    this.activeSenderName,
     this.isPlaying = false,
     this.isLoading = false,
     this.position = Duration.zero,
@@ -18,6 +20,8 @@ class AudioPlaybackState {
   });
 
   final String? activeMessageId;
+  final String? activeChatId;
+  final String? activeSenderName;
   final bool isPlaying;
   final bool isLoading;
   final Duration position;
@@ -27,6 +31,8 @@ class AudioPlaybackState {
 
   AudioPlaybackState copyWith({
     String? activeMessageId,
+    String? activeChatId,
+    String? activeSenderName,
     bool clearActiveMessage = false,
     bool? isPlaying,
     bool? isLoading,
@@ -39,6 +45,10 @@ class AudioPlaybackState {
     return AudioPlaybackState(
       activeMessageId:
           clearActiveMessage ? null : (activeMessageId ?? this.activeMessageId),
+      activeChatId:
+          clearActiveMessage ? null : (activeChatId ?? this.activeChatId),
+      activeSenderName:
+          clearActiveMessage ? null : (activeSenderName ?? this.activeSenderName),
       isPlaying: isPlaying ?? this.isPlaying,
       isLoading: isLoading ?? this.isLoading,
       position: position ?? this.position,
@@ -57,6 +67,8 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
   StreamSubscription<void>? _becomingNoisySub;
   bool _sessionConfigured = false;
+  bool _isHandlingCompletion = false;
+  int _playbackGen = 0;
   String? _loadedSource;
 
   @override
@@ -114,16 +126,25 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
       _playerStateSub = player.playerStateStream.listen((ps) async {
         if (!ref.mounted) return;
         if (ps.processingState == ProcessingState.completed) {
-          await player.pause();
-          await player.seek(Duration.zero);
-          final session = await _ensureSession();
-          await session.setActive(false).catchError((_) => false);
-          if (ref.mounted) {
-            state = state.copyWith(
-              isPlaying: false,
-              isLoading: false,
-              position: Duration.zero,
-            );
+          if (_isHandlingCompletion) return;
+          _isHandlingCompletion = true;
+          final gen = _playbackGen;
+          try {
+            await player.pause();
+            await player.seek(Duration.zero);
+            if (_playbackGen == gen) {
+              final session = await _ensureSession();
+              await session.setActive(false).catchError((_) => false);
+              if (ref.mounted) {
+                state = state.copyWith(
+                  isPlaying: false,
+                  isLoading: false,
+                  position: Duration.zero,
+                );
+              }
+            }
+          } finally {
+            _isHandlingCompletion = false;
           }
           return;
         }
@@ -142,6 +163,8 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
     required String messageId,
     required String urlOrPath,
     required bool isLocalFile,
+    String? chatId,
+    String? senderName,
     Duration? fallbackDuration,
     VoidCallback? onStarted,
   }) async {
@@ -151,17 +174,27 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
 
     final isSameMessage = state.activeMessageId == messageId;
 
-    if (isSameMessage && state.isPlaying) {
+    // Usa player.playing diretamente como fonte síncrona da verdade para evitar
+    // dessincronização por eventos assíncronos do stream em toques rápidos.
+    if (isSameMessage && player.playing) {
       await pause();
       return;
     }
 
     if (isSameMessage && _loadedSource == urlOrPath) {
+      final gen = ++_playbackGen;
       try {
         final session = await _ensureSession();
         await session.setActive(true);
+        if (_playbackGen != gen || !ref.mounted) return;
         await player.setVolume(1.0);
         await player.setSpeed(state.speed);
+        state = state.copyWith(
+          activeChatId: chatId ?? state.activeChatId,
+          activeSenderName: senderName ?? state.activeSenderName,
+          isPlaying: true,
+          clearError: true,
+        );
         onStarted?.call();
         await player.play();
       } catch (_) {
@@ -175,6 +208,8 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
       }
       return;
     }
+
+    final gen = ++_playbackGen;
 
     try {
       if (isLocalFile) {
@@ -192,6 +227,8 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
 
       state = state.copyWith(
         activeMessageId: messageId,
+        activeChatId: chatId,
+        activeSenderName: senderName,
         isLoading: true,
         isPlaying: false,
         position: Duration.zero,
@@ -200,17 +237,22 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
       );
 
       await player.stop();
+      if (_playbackGen != gen || !ref.mounted) return;
+
       if (isLocalFile) {
         await player.setFilePath(urlOrPath);
       } else {
         await player.setUrl(urlOrPath);
       }
+      if (_playbackGen != gen || !ref.mounted) return;
+
       _loadedSource = urlOrPath;
       await player.setVolume(1.0);
       await player.setSpeed(state.speed);
 
       final session = await _ensureSession();
       final activated = await session.setActive(true);
+      if (_playbackGen != gen || !ref.mounted) return;
       if (!activated) {
         state = state.copyWith(
           isLoading: false,
@@ -255,20 +297,36 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
   }
 
   Future<void> pause() async {
-    await _player?.pause();
+    _playbackGen++;
     if (ref.mounted) {
       state = state.copyWith(isPlaying: false);
     }
     try {
-      if (_sessionConfigured) {
-        final session = await AudioSession.instance;
-        await session.setActive(false);
-      }
+      await _player?.pause();
     } catch (_) {}
+  }
+
+  Future<void> resumeCurrent() async {
+    final player = _player;
+    final id = state.activeMessageId;
+    final src = _loadedSource;
+    if (player == null || id == null || src == null) return;
+    await togglePlay(
+      messageId: id,
+      urlOrPath: src,
+      isLocalFile: !src.startsWith('http'),
+      chatId: state.activeChatId,
+      senderName: state.activeSenderName,
+      fallbackDuration: state.duration,
+    );
   }
 
   /// Pausa qualquer reprodução ativa e libera o foco de áudio antes da gravação.
   Future<void> deactivateForRecording() async {
+    _playbackGen++;
+    if (ref.mounted) {
+      state = state.copyWith(isPlaying: false);
+    }
     try {
       await _player?.pause();
       if (_sessionConfigured) {
@@ -279,6 +337,7 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
   }
 
   Future<void> stop() async {
+    _playbackGen++;
     _loadedSource = null;
     await _player?.stop();
     try {

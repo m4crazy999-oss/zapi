@@ -19,6 +19,7 @@ class AppUser {
     this.activeChatId,
     this.hideLastSeen = false,
     this.hideReadReceipts = false,
+    this.addPrivacy = 'all',
   });
 
   final String uid;
@@ -36,6 +37,7 @@ class AppUser {
   final String? activeChatId;
   final bool hideLastSeen;
   final bool hideReadReceipts;
+  final String addPrivacy;
 
   bool get hasPhoto =>
       (photoBase64 != null && photoBase64!.trim().isNotEmpty) ||
@@ -48,6 +50,7 @@ class AppUser {
     final data = doc.data() ?? <String, dynamic>{};
     final rawBlocked = data['blockedUids'];
     final rawBanner = (data['bannerPreset'] as String?)?.trim();
+    final rawAddPrivacy = (data['addPrivacy'] as String?)?.trim();
     return AppUser(
       uid: (data['uid'] as String?) ?? doc.id,
       displayName: (data['displayName'] as String?) ?? 'Usuário Zapi',
@@ -68,6 +71,9 @@ class AppUser {
       activeChatId: data['activeChatId'] as String?,
       hideLastSeen: data['hideLastSeen'] as bool? ?? false,
       hideReadReceipts: data['hideReadReceipts'] as bool? ?? false,
+      addPrivacy: (rawAddPrivacy == 'idOnly' || rawAddPrivacy == 'usernameOnly')
+          ? rawAddPrivacy!
+          : 'all',
     );
   }
 
@@ -88,6 +94,7 @@ class AppUser {
     String? activeChatId,
     bool? hideLastSeen,
     bool? hideReadReceipts,
+    String? addPrivacy,
   }) {
     return AppUser(
       uid: uid ?? this.uid,
@@ -106,6 +113,7 @@ class AppUser {
       activeChatId: activeChatId ?? this.activeChatId,
       hideLastSeen: hideLastSeen ?? this.hideLastSeen,
       hideReadReceipts: hideReadReceipts ?? this.hideReadReceipts,
+      addPrivacy: addPrivacy ?? this.addPrivacy,
     );
   }
 }

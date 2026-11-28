@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -35,7 +37,11 @@ class VoiceRecorderController {
   bool isPaused = false;
   bool isLocked = false;
   bool isCanceling = false;
+  bool isPreviewing = false;
+  bool isPreviewPlaying = false;
   Duration elapsed = Duration.zero;
+  Duration previewPosition = Duration.zero;
+  Duration previewDuration = Duration.zero;
   double dragDx = 0;
   double dragDy = 0;
   final List<double> liveAmplitudes =
@@ -46,21 +52,28 @@ class VoiceRecorderController {
   DateTime? _startedAt;
   Duration _accumulatedBeforePause = Duration.zero;
   String? _currentPath;
+  String? _recordedPreviewPath;
+  int _previewDurationMs = 0;
   Offset? _pointerStart;
   bool _starting = false;
   bool _pointerReleasedDuringStart = false;
   Future<void>? _stopInFlight;
 
+  AudioPlayer? _previewPlayer;
+  StreamSubscription<Duration>? _previewPosSub;
+  StreamSubscription<PlayerState>? _previewStateSub;
+
+  bool get isActive => isRecording || isPreviewing;
+
   Future<void> handlePointerDown(
     BuildContext context,
     PointerDownEvent event,
   ) async {
-    if (isRecording || _starting) return;
+    if (isRecording || isPreviewing || _starting) return;
     _starting = true;
     _pointerReleasedDuringStart = false;
 
     try {
-      // Garante que qualquer gravação/cancelamento anterior terminou antes de gravar de novo.
       final pendingStop = _stopInFlight;
       if (pendingStop != null) {
         await pendingStop.catchError((_) {});
@@ -111,6 +124,7 @@ class VoiceRecorderController {
       isPaused = false;
       isLocked = false;
       isCanceling = false;
+      isPreviewing = false;
       elapsed = Duration.zero;
       dragDx = 0;
       dragDy = 0;
@@ -130,8 +144,6 @@ class VoiceRecorderController {
   }
 
   Future<void> _startRecorderWithSafeConfig(String filePath) async {
-    // echoCancel e autoGain desligados para evitar silêncio em HALs Android fora de chamada VoIP;
-    // noiseSuppress usa o supressor de ruído nativo do Android com qualidade padrão 44.1kHz / 64kbps.
     const primaryConfig = RecordConfig(
       encoder: AudioEncoder.aacLc,
       bitRate: AppConstants.audioBitRate,
@@ -145,7 +157,6 @@ class VoiceRecorderController {
     try {
       await _recorder.start(primaryConfig, path: filePath);
     } catch (_) {
-      // Fallback caso algum aparelho não suporte o supressor nativo nessa taxa.
       await _recorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -194,7 +205,6 @@ class VoiceRecorderController {
 
     final durationMs = _currentDurationMs();
     if (durationMs < 450) {
-      // Toque rápido cancela silenciosamente sem mostrar avisos nem travar o botão.
       await cancelRecording();
       return;
     }
@@ -243,6 +253,175 @@ class VoiceRecorderController {
     } else {
       await pauseRecording();
     }
+  }
+
+  Future<void> enterPreviewMode() async {
+    if (!isRecording || _stopInFlight != null) return;
+    final completer = Completer<void>();
+    _stopInFlight = completer.future;
+
+    try {
+      _stopTimers();
+      final durationMs = _currentDurationMs()
+          .clamp(450, AppConstants.maxAudioDuration.inMilliseconds);
+      final recordedPath = await _recorder.stop() ?? _currentPath;
+      if (recordedPath == null || !await File(recordedPath).exists()) {
+        _resetState();
+        onStateChanged();
+        return;
+      }
+
+      isRecording = false;
+      isPaused = false;
+      isLocked = false;
+      isCanceling = false;
+      isPreviewing = true;
+      isPreviewPlaying = false;
+      _recordedPreviewPath = recordedPath;
+      _previewDurationMs = durationMs;
+      previewDuration = Duration(milliseconds: durationMs);
+      previewPosition = Duration.zero;
+      _startedAt = null;
+      _currentPath = null;
+      onStateChanged();
+    } catch (_) {
+      onFeedbackMessage('Não foi possível preparar a prévia do áudio.');
+      await cancelRecording();
+    } finally {
+      _stopInFlight = null;
+      completer.complete();
+    }
+  }
+
+  Future<void> togglePreviewPlay() async {
+    final path = _recordedPreviewPath;
+    if (!isPreviewing || path == null) return;
+
+    try {
+      final player = _previewPlayer;
+      if (player != null && player.playing) {
+        await player.pause();
+        isPreviewPlaying = false;
+        onStateChanged();
+        return;
+      }
+
+      if (onBeforeRecordStart != null) {
+        await onBeforeRecordStart!().catchError((_) {});
+      }
+
+      final session = await AudioSession.instance;
+      await session.configure(
+        const AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playback,
+          avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+          androidAudioAttributes: AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.speech,
+            usage: AndroidAudioUsage.media,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransient,
+        ),
+      );
+      await session.setActive(true);
+
+      if (_previewPlayer == null) {
+        final pInstance = AudioPlayer();
+        _previewPlayer = pInstance;
+        await pInstance.setFilePath(path);
+        final actualDur = pInstance.duration;
+        if (actualDur != null && actualDur > Duration.zero) {
+          previewDuration = actualDur;
+          _previewDurationMs = actualDur.inMilliseconds;
+        }
+        _previewPosSub = pInstance.positionStream.listen((pos) {
+          if (!isPreviewing) return;
+          previewPosition = pos;
+          onStateChanged();
+        });
+        _previewStateSub = pInstance.playerStateStream.listen((ps) async {
+          if (!isPreviewing) return;
+          if (ps.processingState == ProcessingState.completed) {
+            await pInstance.pause();
+            await pInstance.seek(Duration.zero);
+            isPreviewPlaying = false;
+            previewPosition = Duration.zero;
+            onStateChanged();
+          } else {
+            isPreviewPlaying = ps.playing;
+            onStateChanged();
+          }
+        });
+      }
+
+      isPreviewPlaying = true;
+      onStateChanged();
+      await _previewPlayer!.setVolume(1.0);
+      await _previewPlayer!.play();
+    } catch (_) {
+      isPreviewPlaying = false;
+      onStateChanged();
+      onFeedbackMessage('Não foi possível reproduzir a prévia.');
+    }
+  }
+
+  Future<void> seekPreview(Duration target) async {
+    final player = _previewPlayer;
+    if (!isPreviewing || player == null) return;
+    final maxMs = previewDuration.inMilliseconds;
+    final clamped = maxMs > 0
+        ? Duration(milliseconds: target.inMilliseconds.clamp(0, maxMs))
+        : target;
+    previewPosition = clamped;
+    onStateChanged();
+    await player.seek(clamped);
+  }
+
+  Future<void> sendPreviewed() async {
+    if (!isPreviewing) return;
+    final path = _recordedPreviewPath;
+    final durationMs = _previewDurationMs;
+    await _disposePreviewPlayer();
+    _resetState();
+    onStateChanged();
+
+    if (path != null) {
+      final file = File(path);
+      if (await file.exists() && await file.length() > 512) {
+        onCompleted(path, durationMs.clamp(450, AppConstants.maxAudioDuration.inMilliseconds));
+      } else if (await file.exists()) {
+        await file.delete().catchError((_) => file);
+      }
+    }
+  }
+
+  Future<void> discardPreview() async {
+    final path = _recordedPreviewPath;
+    await _disposePreviewPlayer();
+    _resetState();
+    onStateChanged();
+    if (path != null) {
+      final f = File(path);
+      if (await f.exists()) {
+        await f.delete().catchError((_) => f);
+      }
+    }
+  }
+
+  Future<void> _disposePreviewPlayer() async {
+    await _previewPosSub?.cancel();
+    await _previewStateSub?.cancel();
+    _previewPosSub = null;
+    _previewStateSub = null;
+    final player = _previewPlayer;
+    _previewPlayer = null;
+    if (player != null) {
+      await player.stop().catchError((_) {});
+      await player.dispose().catchError((_) {});
+    }
+    try {
+      final session = await AudioSession.instance;
+      await session.setActive(false);
+    } catch (_) {}
   }
 
   Future<void> finishAndSend() async {
@@ -332,7 +511,6 @@ class VoiceRecorderController {
       onStateChanged();
     });
 
-    // Atualiza ~15 vezes por segundo com base na amplitude real do microfone (dBFS).
     _ampTimer = Timer.periodic(const Duration(milliseconds: 65), (_) async {
       if (!isRecording || isPaused) return;
       try {
@@ -371,17 +549,31 @@ class VoiceRecorderController {
     isPaused = false;
     isLocked = false;
     isCanceling = false;
+    isPreviewing = false;
+    isPreviewPlaying = false;
     elapsed = Duration.zero;
+    previewPosition = Duration.zero;
+    previewDuration = Duration.zero;
     dragDx = 0;
     dragDy = 0;
     _startedAt = null;
     _accumulatedBeforePause = Duration.zero;
     _currentPath = null;
+    _recordedPreviewPath = null;
+    _previewDurationMs = 0;
     _pointerStart = null;
   }
 
   Future<void> dispose() async {
     _stopTimers();
+    await _disposePreviewPlayer();
+    final previewPath = _recordedPreviewPath;
+    if (previewPath != null) {
+      final f = File(previewPath);
+      if (await f.exists()) {
+        await f.delete().catchError((_) => f);
+      }
+    }
     if (isRecording) {
       await _recorder.cancel().catchError((_) {});
     }
@@ -402,6 +594,105 @@ class VoiceRecordingBar extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    if (controller.isPreviewing) {
+      final totalMs = controller.previewDuration.inMilliseconds;
+      final posMs = controller.previewPosition.inMilliseconds
+          .clamp(0, totalMs > 0 ? totalMs : 0);
+      return Container(
+        margin: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          ),
+        ),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: controller.discardPreview,
+              tooltip: 'Descartar áudio',
+              icon: Icon(
+                Icons.delete_rounded,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            IconButton(
+              onPressed: controller.togglePreviewPlay,
+              tooltip: controller.isPreviewPlaying ? 'Pausar' : 'Ouvir',
+              style: IconButton.styleFrom(
+                backgroundColor: primaryColor.withValues(alpha: 0.14),
+                foregroundColor: primaryColor,
+              ),
+              icon: Icon(
+                controller.isPreviewPlaying
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
+                size: 22,
+              ),
+            ),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2.8,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
+                      ),
+                    ),
+                    child: Slider(
+                      value: totalMs > 0 ? posMs.toDouble() : 0,
+                      min: 0,
+                      max: totalMs > 0 ? totalMs.toDouble() : 1,
+                      activeColor: primaryColor,
+                      inactiveColor: secondaryText.withValues(alpha: 0.28),
+                      onChanged: totalMs > 0
+                          ? (v) => controller.seekPreview(
+                                Duration(milliseconds: v.round()),
+                              )
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              controller.isPreviewPlaying || posMs > 0
+                  ? DateFormatter.formatDuration(controller.previewPosition)
+                  : DateFormatter.formatDuration(controller.previewDuration),
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: FilledButton(
+                onPressed: controller.sendPreviewed,
+                style: FilledButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.zero,
+                  shape: const CircleBorder(),
+                ),
+                child: const Icon(Icons.send_rounded, size: 20),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (controller.isLocked) {
       return Container(
@@ -444,27 +735,41 @@ class VoiceRecordingBar extends StatelessWidget {
                 fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: Opacity(
                 opacity: controller.isPaused ? 0.45 : 1.0,
                 child: _LiveWaveform(amplitudes: controller.liveAmplitudes),
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
+            IconButton(
+              onPressed: controller.enterPreviewMode,
+              tooltip: 'Ouvir antes de enviar',
+              visualDensity: VisualDensity.compact,
+              style: IconButton.styleFrom(
+                backgroundColor: isDark
+                    ? AppColors.darkSurfaceAlt
+                    : AppColors.lightSurfaceAlt,
+                foregroundColor: Theme.of(context).colorScheme.onSurface,
+              ),
+              icon: const Icon(Icons.headphones_rounded, size: 19),
+            ),
+            const SizedBox(width: 4),
             IconButton(
               onPressed: controller.togglePauseResume,
               tooltip: controller.isPaused
                   ? 'Continuar gravação'
                   : 'Pausar gravação',
+              visualDensity: VisualDensity.compact,
               style: IconButton.styleFrom(
                 backgroundColor: controller.isPaused
-                    ? AppColors.emerald.withValues(alpha: 0.16)
+                    ? primaryColor.withValues(alpha: 0.16)
                     : (isDark
                         ? AppColors.darkSurfaceAlt
                         : AppColors.lightSurfaceAlt),
                 foregroundColor: controller.isPaused
-                    ? AppColors.emerald
+                    ? primaryColor
                     : Theme.of(context).colorScheme.onSurface,
               ),
               icon: Icon(
@@ -479,7 +784,7 @@ class VoiceRecordingBar extends StatelessWidget {
               child: FilledButton(
                 onPressed: controller.finishAndSend,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.emerald,
+                  backgroundColor: primaryColor,
                   foregroundColor: Colors.white,
                   padding: EdgeInsets.zero,
                   shape: const CircleBorder(),
@@ -602,11 +907,11 @@ class VoiceRecordingBar extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: controller.isCanceling
                         ? Theme.of(context).colorScheme.error
-                        : AppColors.emerald,
+                        : primaryColor,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.emerald.withValues(alpha: 0.35),
+                        color: primaryColor.withValues(alpha: 0.35),
                         blurRadius: 12,
                         spreadRadius: 2,
                       ),
@@ -689,7 +994,7 @@ class _LiveWaveform extends StatelessWidget {
             width: 3,
             height: (24 * amp).clamp(3.0, 24.0),
             decoration: BoxDecoration(
-              color: AppColors.emerald,
+              color: Theme.of(context).colorScheme.primary,
               borderRadius: BorderRadius.circular(2),
             ),
           );

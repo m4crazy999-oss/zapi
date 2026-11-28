@@ -104,6 +104,27 @@ class MediaCacheService {
     return future;
   }
 
+  Future<File?> getCachedChatMediaIfExists({
+    required String chatId,
+    required String mediaId,
+    String? mimeType,
+    String? fileName,
+  }) async {
+    if (chatId.isEmpty || mediaId.isEmpty) return null;
+    try {
+      final target = await _chatMediaTargetFile(
+        chatId: chatId,
+        mediaId: mediaId,
+        mimeType: mimeType,
+        fileName: fileName,
+      );
+      if (await target.exists() && await target.length() > 0) {
+        return target;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<File?> _resolveChatMedia({
     required String chatId,
     required String mediaId,
@@ -213,6 +234,22 @@ class MediaCacheService {
       await target.delete().catchError((_) => target);
     }
     await tempFile.rename(target.path);
+  }
+
+  Future<int> computeCacheSizeBytes() async {
+    try {
+      final root = await _rootDir();
+      if (!await root.exists()) return 0;
+      var total = 0;
+      await for (final entity in root.list(recursive: true, followLinks: false)) {
+        if (entity is File) {
+          total += await entity.length().catchError((_) => 0);
+        }
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    }
   }
 
   Future<void> clearAllCache() async {

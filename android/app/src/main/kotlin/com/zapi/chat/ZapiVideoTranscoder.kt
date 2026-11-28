@@ -67,6 +67,7 @@ object ZapiVideoTranscoder {
         startMs: Long,
         endMs: Long,
         maxBytes: Long,
+        removeAudio: Boolean = false,
         onComplete: (Map<String, Any?>) -> Unit,
         onFailure: (String) -> Unit,
     ) {
@@ -101,10 +102,10 @@ object ZapiVideoTranscoder {
             return
         }
 
-        // Fast-path: if user kept full/nearly-full short clip and file is already under maxBytes, reuse directly
+        // Fast-path: if user kept full/nearly-full short clip, audio isn't being stripped, and file is under maxBytes
         val fullRangeSelected = safeStart <= 150L &&
             (info.durationMs <= 0L || effectiveEnd >= info.durationMs - 150L)
-        if (fullRangeSelected && inputFile.length() in 1..maxBytes) {
+        if (!removeAudio && fullRangeSelected && inputFile.length() in 1..maxBytes) {
             onComplete(
                 mapOf(
                     "tooLarge" to false,
@@ -122,10 +123,14 @@ object ZapiVideoTranscoder {
 
         val clipSec = max(1.0, clipDurationMs / 1000.0)
         val targetTotalBps = ((maxBytes * 8.0 * 0.84) / clipSec).toInt()
-        val audioBps = when {
-            targetTotalBps >= 260_000 -> 48_000
-            targetTotalBps >= 140_000 -> 32_000
-            else -> 24_000
+        val audioBps = if (removeAudio) {
+            0
+        } else {
+            when {
+                targetTotalBps >= 260_000 -> 48_000
+                targetTotalBps >= 140_000 -> 32_000
+                else -> 24_000
+            }
         }
         val videoBps = (targetTotalBps - audioBps).coerceIn(48_000, 1_400_000)
         val shortSide = when {
@@ -146,6 +151,7 @@ object ZapiVideoTranscoder {
             shortSide = shortSide,
             videoBps = videoBps,
             audioBps = audioBps,
+            removeAudio = removeAudio,
             onDone = { outFile ->
                 val actualSize = outFile.length()
                 if (actualSize <= maxBytes && actualSize > 0L) {
@@ -172,7 +178,8 @@ object ZapiVideoTranscoder {
                         endMs = effectiveEnd,
                         shortSide = 240,
                         videoBps = retryVideoBps,
-                        audioBps = 20_000,
+                        audioBps = if (removeAudio) 0 else 20_000,
+                        removeAudio = removeAudio,
                         onDone = { secondFile ->
                             val secondSize = secondFile.length()
                             if (secondSize <= maxBytes && secondSize > 0L) {
@@ -219,6 +226,7 @@ object ZapiVideoTranscoder {
         shortSide: Int,
         videoBps: Int,
         audioBps: Int,
+        removeAudio: Boolean,
         onDone: (File) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -242,7 +250,7 @@ object ZapiVideoTranscoder {
                 }
 
                 val editedItem = EditedMediaItem.Builder(mediaItem)
-                    .setRemoveAudio(false)
+                    .setRemoveAudio(removeAudio)
                     .setEffects(Effects(emptyList(), videoEffects))
                     .build()
 
@@ -251,7 +259,7 @@ object ZapiVideoTranscoder {
                     .build()
 
                 val audioSettings = AudioEncoderSettings.Builder()
-                    .setBitrate(audioBps)
+                    .setBitrate(if (removeAudio) 24_000 else audioBps)
                     .build()
 
                 val encoderFactory = DefaultEncoderFactory.Builder(context)

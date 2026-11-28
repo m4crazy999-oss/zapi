@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../chats/domain/chat_thread.dart';
 import '../../../chats/presentation/providers/chats_providers.dart';
 
 class HomeShellScreen extends ConsumerStatefulWidget {
@@ -19,6 +22,9 @@ class HomeShellScreen extends ConsumerStatefulWidget {
 
 class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
     with WidgetsBindingObserver {
+  final Set<String> _deliveredMessageTokens = {};
+  bool _initialDeliveryChecked = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +45,30 @@ class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
     }
   }
 
+  void _scheduleIncomingDelivery(String myUid, List<ChatThread> chats) {
+    if (myUid.isEmpty || chats.isEmpty) return;
+    final pending = <ChatThread>[];
+    for (final chat in chats) {
+      if (chat.hasPendingWrites ||
+          chat.lastMessageSenderId == null ||
+          chat.lastMessageSenderId == myUid ||
+          chat.lastMessageStatus != 'sent') {
+        continue;
+      }
+      final token = '${chat.chatId}::${chat.lastMessageId ?? ''}';
+      if (_deliveredMessageTokens.add(token)) {
+        pending.add(chat);
+      }
+    }
+    if (pending.isEmpty) return;
+    unawaited(
+      ref.read(chatsRepositoryProvider).markIncomingChatsDelivered(
+            currentUid: myUid,
+            chats: pending,
+          ),
+    );
+  }
+
   void _onDestinationSelected(int index) {
     widget.navigationShell.goBranch(
       index,
@@ -51,6 +81,21 @@ class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
     final myUid =
         ref.watch(authStateProvider.select((s) => s.value?.uid)) ?? '';
     final chats = ref.watch(userChatsProvider).value ?? const [];
+
+    ref.listen<AsyncValue<List<ChatThread>>>(userChatsProvider, (_, next) {
+      final items = next.value;
+      if (items == null || myUid.isEmpty) return;
+      _scheduleIncomingDelivery(myUid, items);
+    });
+
+    if (!_initialDeliveryChecked && myUid.isNotEmpty && chats.isNotEmpty) {
+      _initialDeliveryChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scheduleIncomingDelivery(myUid, chats);
+      });
+    }
+
     final totalUnread = myUid.isEmpty
         ? 0
         : chats.fold<int>(0, (sum, c) => sum + c.unreadFor(myUid));
@@ -98,11 +143,6 @@ class _HomeShellScreenState extends ConsumerState<HomeShellScreen>
             icon: Icon(Icons.people_outline_rounded),
             selectedIcon: Icon(Icons.people_rounded),
             label: 'Contatos',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.settings_rounded),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: 'Configurações',
           ),
         ],
       ),

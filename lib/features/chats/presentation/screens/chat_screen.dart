@@ -39,6 +39,9 @@ import '../../data/media_upload_manager.dart';
 import '../../domain/chat_message.dart';
 import '../../domain/chat_thread.dart';
 import '../providers/chats_providers.dart';
+import '../widgets/chat_audio_mini_bar.dart';
+import '../widgets/chat_forward_sheet.dart';
+import '../widgets/chat_message_actions_sheet.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/reply_preview_bar.dart';
 import '../widgets/voice_recorder_bar.dart';
@@ -61,15 +64,6 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen>
     with WidgetsBindingObserver {
-  static const List<String> _quickReactions = [
-    '👍',
-    '❤️',
-    '😂',
-    '😮',
-    '😢',
-    '🙏',
-  ];
-
   final _textController = TextEditingController();
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
@@ -660,179 +654,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _openForwardSheet(ChatMessage sourceMessage) async {
-    final sender = _resolveCurrentUser(ref.read(currentUserProfileProvider).value);
+    final sender =
+        _resolveCurrentUser(ref.read(currentUserProfileProvider).value);
     if (sender == null || _myUid.isEmpty) return;
 
-    final target = await showModalBottomSheet<
-        ({
-          String uid,
-          String displayName,
-          String username,
-          String about,
-          String? photoBase64,
-          String? photoUrl,
-          bool chatExists,
-        })>(
+    final target = await showChatForwardSheet(
       context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetCtx) {
-        var filter = '';
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Consumer(
-              builder: (context, sheetRef, _) {
-                final chats = sheetRef.watch(userChatsProvider).value ?? const [];
-                final contacts =
-                    sheetRef.watch(contactsListProvider).value ?? const [];
-                final contactsByUid = sheetRef.watch(contactsByUidProvider);
-                final isDark =
-                    Theme.of(context).brightness == Brightness.dark;
-                final secondaryText = isDark
-                    ? AppColors.darkTextSecondary
-                    : AppColors.lightTextSecondary;
-
-                final items = <({
-                  String uid,
-                  String displayName,
-                  String username,
-                  String about,
-                  String? photoBase64,
-                  String? photoUrl,
-                  bool chatExists,
-                })>[];
-                final seenUids = <String>{};
-
-                for (final chat in chats) {
-                  final peerUid = chat.otherParticipantUid(_myUid);
-                  if (peerUid.isEmpty || !seenUids.add(peerUid)) continue;
-                  final saved = contactsByUid[peerUid];
-                  final profile = chat.profileFor(peerUid);
-                  items.add((
-                    uid: peerUid,
-                    displayName: saved?.effectiveName ??
-                        profile?.displayName ??
-                        'Contato Zapi',
-                    username: saved?.username ?? profile?.username ?? '',
-                    about: saved?.about ?? profile?.about ?? '',
-                    photoBase64: saved?.photoBase64 ?? profile?.photoBase64,
-                    photoUrl: saved?.photoUrl ?? profile?.photoUrl,
-                    chatExists: true,
-                  ));
-                }
-
-                for (final contact in contacts) {
-                  if (!seenUids.add(contact.contactUid)) continue;
-                  items.add((
-                    uid: contact.contactUid,
-                    displayName: contact.effectiveName,
-                    username: contact.username,
-                    about: contact.about,
-                    photoBase64: contact.photoBase64,
-                    photoUrl: contact.photoUrl,
-                    chatExists: false,
-                  ));
-                }
-
-                final q = filter.trim().toLowerCase();
-                final filtered = q.isEmpty
-                    ? items
-                    : items
-                        .where(
-                          (item) =>
-                              item.displayName.toLowerCase().contains(q) ||
-                              item.username.toLowerCase().contains(q),
-                        )
-                        .toList();
-
-                return SafeArea(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.sizeOf(context).height * 0.72,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-                          child: Text(
-                            'Encaminhar para...',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                          child: TextField(
-                            onChanged: (val) =>
-                                setSheetState(() => filter = val),
-                            decoration: const InputDecoration(
-                              hintText: 'Buscar conversa ou contato...',
-                              prefixIcon: Icon(Icons.search_rounded),
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                        const Divider(height: 1),
-                        Flexible(
-                          child: filtered.isEmpty
-                              ? Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Text(
-                                    'Nenhum contato disponível.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(color: secondaryText),
-                                  ),
-                                )
-                              : ListView.separated(
-                                  shrinkWrap: true,
-                                  itemCount: filtered.length,
-                                  separatorBuilder: (_, __) =>
-                                      const Divider(indent: 72, height: 1),
-                                  itemBuilder: (context, index) {
-                                    final item = filtered[index];
-                                    return ListTile(
-                                      leading: ZapiAvatar(
-                                        displayName: item.displayName,
-                                        photoBase64: item.photoBase64,
-                                        photoUrl: item.photoUrl,
-                                        radius: 21,
-                                      ),
-                                      title: Text(
-                                        item.displayName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      subtitle: item.username.isNotEmpty
-                                          ? Text(
-                                              '@${item.username}',
-                                              style: TextStyle(
-                                                color: secondaryText,
-                                                fontSize: 12.5,
-                                              ),
-                                            )
-                                          : null,
-                                      onTap: () =>
-                                          Navigator.pop(sheetCtx, item),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
+      myUid: _myUid,
     );
 
     if (target == null || !mounted) return;
@@ -992,267 +820,107 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  Future<void> _openFileMessage(ChatMessage message) async {
+    final file = await _resolveMessageFile(message);
+    if (!mounted) return;
+    if (file == null || !await file.exists()) {
+      ZapiToast.showError(
+        context,
+        'Arquivo indisponível.',
+        bottomOffset: 80,
+      );
+      return;
+    }
+    final res = await OpenFilex.open(
+      file.path,
+      type: message.mimeType,
+    );
+    if (!mounted) return;
+    if (res.type != ResultType.done) {
+      ZapiToast.showError(
+        context,
+        'Nenhum aplicativo encontrado para abrir este arquivo.',
+        bottomOffset: 80,
+      );
+    }
+  }
+
+  Future<void> _shareFileMessage(ChatMessage message) async {
+    final file = await _resolveMessageFile(message);
+    if (!mounted) return;
+    if (file == null || !await file.exists()) {
+      ZapiToast.showError(
+        context,
+        'Arquivo indisponível.',
+        bottomOffset: 80,
+      );
+      return;
+    }
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: message.fileName ?? 'Arquivo',
+    );
+  }
+
   void _showMessageActions({
     required ChatMessage message,
     required String senderLabel,
     required bool isLastMessage,
   }) {
-    unawaited(HapticFeedback.mediumImpact());
     final isMine = message.senderId == _myUid;
-
-    if (message.isUploading || message.uploadFailed) {
-      showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (sheetCtx) {
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (message.uploadFailed)
-                  ListTile(
-                    leading: const Icon(Icons.refresh_rounded),
-                    title: const Text('Tentar enviar novamente'),
-                    onTap: () {
-                      Navigator.pop(sheetCtx);
-                      ref
-                          .read(mediaUploadManagerProvider.notifier)
-                          .retryUpload(widget.chatId, message.id);
-                    },
-                  ),
-                ListTile(
-                  leading: Icon(
-                    Icons.close_rounded,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  title: Text(
-                    message.uploadFailed ? 'Descartar envio' : 'Cancelar envio',
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetCtx);
-                    ref
-                        .read(mediaUploadManagerProvider.notifier)
-                        .cancelUpload(widget.chatId, message.id);
-                  },
-                ),
-              ],
-            ),
-          );
-        },
-      );
-      return;
-    }
-
-    showModalBottomSheet<void>(
+    showChatMessageActionsSheet(
       context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        final isDark = Theme.of(sheetContext).brightness == Brightness.dark;
-        final myReaction = message.reactionFor(_myUid);
-
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!message.deletedForEveryone) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: _quickReactions.map((emoji) {
-                      final selected = myReaction == emoji;
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: () {
-                          Navigator.pop(sheetContext);
-                          unawaited(_toggleReaction(message, emoji));
-                        },
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: selected
-                                ? AppColors.emerald.withValues(alpha: 0.2)
-                                : (isDark
-                                    ? AppColors.darkSurfaceAlt
-                                    : AppColors.lightSurfaceAlt),
-                            border: selected
-                                ? Border.all(
-                                    color: AppColors.emerald,
-                                    width: 1.4,
-                                  )
-                                : null,
-                          ),
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 22),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.reply_rounded),
-                  title: const Text('Responder'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    setState(() {
-                      _replyingTo = ReplyQuote(
-                        messageId: message.id,
-                        senderId: message.senderId,
-                        senderName: isMine ? 'Você' : senderLabel,
-                        text: message.quotePreviewText,
-                      );
-                    });
-                    _focusNode.requestFocus();
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.forward_rounded),
-                  title: const Text('Encaminhar'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    unawaited(_openForwardSheet(message));
-                  },
-                ),
-                if (message.isSticker &&
-                    (message.mediaId?.isNotEmpty ?? false))
-                  ListTile(
-                    leading: const Icon(Icons.star_rounded),
-                    title: const Text('Adicionar às minhas figurinhas'),
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      try {
-                        await ref
-                            .read(stickersRepositoryProvider)
-                            .saveReceivedSticker(
-                              uid: _myUid,
-                              chatId: message.chatId,
-                              mediaId: message.mediaId,
-                              mimeType: message.mimeType,
-                            );
-                      } on AppException catch (e) {
-                        if (!mounted) return;
-                        ZapiToast.showError(
-                          context,
-                          e.message,
-                          bottomOffset: 80,
-                        );
-                      }
-                    },
-                  ),
-                if (message.isFile) ...[
-                  ListTile(
-                    leading: const Icon(Icons.open_in_new_rounded),
-                    title: const Text('Abrir arquivo'),
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      final file = await _resolveMessageFile(message);
-                      if (!mounted) return;
-                      if (file == null || !await file.exists()) {
-                        ZapiToast.showError(
-                          context,
-                          'Arquivo indisponível.',
-                          bottomOffset: 80,
-                        );
-                        return;
-                      }
-                      final res = await OpenFilex.open(
-                        file.path,
-                        type: message.mimeType,
-                      );
-                      if (!mounted) return;
-                      if (res.type != ResultType.done) {
-                        ZapiToast.showError(
-                          context,
-                          'Nenhum aplicativo encontrado para abrir este arquivo.',
-                          bottomOffset: 80,
-                        );
-                      }
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.save_alt_rounded),
-                    title: const Text('Salvar ou compartilhar arquivo'),
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      final file = await _resolveMessageFile(message);
-                      if (!mounted) return;
-                      if (file == null || !await file.exists()) {
-                        ZapiToast.showError(
-                          context,
-                          'Arquivo indisponível.',
-                          bottomOffset: 80,
-                        );
-                        return;
-                      }
-                      await Share.shareXFiles(
-                        [XFile(file.path)],
-                        text: message.fileName ?? 'Arquivo',
-                      );
-                    },
-                  ),
-                ],
-                if (message.text.trim().isNotEmpty)
-                  ListTile(
-                    leading: const Icon(Icons.copy_rounded),
-                    title: const Text('Copiar texto'),
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      await Clipboard.setData(
-                        ClipboardData(text: message.text),
-                      );
-                      unawaited(HapticFeedback.selectionClick());
-                    },
-                  ),
-              ],
-              ListTile(
-                leading: const Icon(Icons.delete_rounded),
-                title: const Text('Apagar para mim'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _hideMessageOptimistically(message.id);
-                },
-              ),
-              if (isMine && !message.deletedForEveryone)
-                ListTile(
-                  leading: Icon(
-                    Icons.delete_forever_rounded,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  title: Text(
-                    'Apagar para todos',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onTap: () async {
-                    Navigator.pop(sheetContext);
-                    try {
-                      await ref
-                          .read(chatsRepositoryProvider)
-                          .deleteMessageForEveryone(
-                            chatId: widget.chatId,
-                            messageId: message.id,
-                            isLastMessage: isLastMessage,
-                            mediaId: message.mediaId,
-                          );
-                    } on AppException catch (e) {
-                      if (!mounted) return;
-                      ZapiToast.showError(context, e.message, bottomOffset: 80);
-                    }
-                  },
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
+      message: message,
+      myUid: _myUid,
+      senderLabel: senderLabel,
+      isLastMessage: isLastMessage,
+      onRetryUpload: () => ref
+          .read(mediaUploadManagerProvider.notifier)
+          .retryUpload(widget.chatId, message.id),
+      onCancelUpload: () => ref
+          .read(mediaUploadManagerProvider.notifier)
+          .cancelUpload(widget.chatId, message.id),
+      onToggleReaction: (emoji) => unawaited(_toggleReaction(message, emoji)),
+      onReply: () {
+        setState(() {
+          _replyingTo = ReplyQuote(
+            messageId: message.id,
+            senderId: message.senderId,
+            senderName: isMine ? 'Você' : senderLabel,
+            text: message.quotePreviewText,
+          );
+        });
+        _focusNode.requestFocus();
+      },
+      onForward: () => unawaited(_openForwardSheet(message)),
+      onSaveSticker: () async {
+        try {
+          await ref.read(stickersRepositoryProvider).saveReceivedSticker(
+                uid: _myUid,
+                chatId: message.chatId,
+                mediaId: message.mediaId,
+                mimeType: message.mimeType,
+              );
+        } on AppException catch (e) {
+          if (!mounted) return;
+          ZapiToast.showError(context, e.message, bottomOffset: 80);
+        }
+      },
+      onOpenFile: () => unawaited(_openFileMessage(message)),
+      onSaveFile: () => unawaited(_shareFileMessage(message)),
+      onDeleteForMe: () => _hideMessageOptimistically(message.id),
+      onDeleteForEveryone: () async {
+        try {
+          await ref.read(chatsRepositoryProvider).deleteMessageForEveryone(
+                chatId: widget.chatId,
+                messageId: message.id,
+                isLastMessage: isLastMessage,
+                mediaId: message.mediaId,
+              );
+        } on AppException catch (e) {
+          if (!mounted) return;
+          ZapiToast.showError(context, e.message, bottomOffset: 80);
+        }
       },
     );
   }
@@ -1330,6 +998,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final isBlockedByMe =
         (currentUser?.blockedUids.contains(peerUid) ?? false) ||
             (thread?.isBlockedBy(_myUid) ?? false);
+    final enterToSend =
+        ref.watch(chatPreferencesProvider.select((s) => s.enterToSend));
 
     ref.listen<ChatPreferencesState>(
       chatPreferencesProvider,
@@ -1583,6 +1253,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   ],
                 ),
               ),
+            ChatAudioMiniBar(chatId: widget.chatId),
             Expanded(
               child: ChatWallpaperBackground(
                 preset: ref.watch(chatWallpaperProvider),
@@ -1722,6 +1393,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 isMine: message.senderId == _myUid,
                                 currentUid: _myUid,
                                 peerUid: peerUid,
+                                senderLabel: peerName,
                                 highlightQuery: _isSearching ? _searchQuery : '',
                                 hideReadReceipts: hideReadReceipts,
                                 onReactionTap: (emoji) =>
@@ -1849,7 +1521,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         quote: _replyingTo!,
                         onCancel: () => setState(() => _replyingTo = null),
                       ),
-                    if (_voiceController.isRecording)
+                    if (_voiceController.isActive)
                       VoiceRecordingBar(controller: _voiceController)
                     else
                       Padding(
@@ -1865,6 +1537,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                 maxLines: 5,
                                 textCapitalization:
                                     TextCapitalization.sentences,
+                                textInputAction: enterToSend
+                                    ? TextInputAction.send
+                                    : TextInputAction.newline,
+                                onSubmitted: enterToSend
+                                    ? (_) => _sendMessage(
+                                          currentUser: currentUser,
+                                          peerUser: peerUser,
+                                          thread: thread,
+                                        )
+                                    : null,
                                 onTap: () {
                                   if (_showStickerTray) {
                                     setState(() => _showStickerTray = false);
@@ -2011,7 +1693,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           ],
                         ),
                       ),
-                    if (_showStickerTray && !_voiceController.isRecording)
+                    if (_showStickerTray && !_voiceController.isActive)
                       StickerTray(
                         onEmojiSelected: _insertEmoji,
                         onStickerSelected: (sticker) async {

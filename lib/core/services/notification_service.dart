@@ -23,11 +23,12 @@ class NotificationService {
     required FirebaseAuth auth,
     required FirebaseFirestore firestore,
     bool Function(String chatId)? isChatMuted,
-    ({bool sound, bool vibration}) Function()? readSoundVibration,
+    ({bool sound, bool vibration, bool hidePreview}) Function()?
+        readNotificationPrefs,
   })  : _auth = auth,
         _firestore = firestore,
         _isChatMuted = isChatMuted,
-        _readSoundVibration = readSoundVibration {
+        _readNotificationPrefs = readNotificationPrefs {
     if (Platform.isAndroid) {
       _bgChannel.setMethodCallHandler((call) async {
         if (call.method == 'openChat') {
@@ -46,17 +47,20 @@ class NotificationService {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final bool Function(String chatId)? _isChatMuted;
-  final ({bool sound, bool vibration}) Function()? _readSoundVibration;
+  final ({bool sound, bool vibration, bool hidePreview}) Function()?
+      _readNotificationPrefs;
 
   static Future<void> syncNativeSoundVibration({
     required bool sound,
     required bool vibration,
+    bool? hidePreview,
   }) async {
     if (!Platform.isAndroid) return;
     try {
       await _bgChannel.invokeMethod<void>('setNotificationPrefs', {
         'sound': sound,
         'vibration': vibration,
+        if (hidePreview != null) 'hidePreview': hidePreview,
       });
     } catch (_) {}
   }
@@ -336,14 +340,14 @@ class NotificationService {
           }
           final senderProfile = thread.profileFor(thread.lastMessageSenderId!);
           final title = senderProfile?.displayName ?? 'Nova mensagem';
-          final body = thread.lastMessage.isNotEmpty
+          final rawBody = thread.lastMessage.isNotEmpty
               ? thread.lastMessage
               : 'Nova mensagem';
           await _showLocalNotification(
             chatId: thread.chatId,
             messageId: msgId,
             title: title,
-            body: body,
+            body: rawBody,
           );
         }
       }
@@ -417,8 +421,9 @@ class NotificationService {
       );
     }
 
-    final prefs =
-        _readSoundVibration?.call() ?? (sound: true, vibration: true);
+    final prefs = _readNotificationPrefs?.call() ??
+        (sound: true, vibration: true, hidePreview: false);
+    final displayBody = prefs.hidePreview ? 'Nova mensagem' : body;
     final channelId = AppConstants.notificationChannelId(
       sound: prefs.sound,
       vibration: prefs.vibration,
@@ -434,7 +439,9 @@ class NotificationService {
       icon: '@drawable/ic_stat_zapi',
       color: const Color(0xFF00A884),
       category: AndroidNotificationCategory.message,
-      visibility: NotificationVisibility.public,
+      visibility: prefs.hidePreview
+          ? NotificationVisibility.private
+          : NotificationVisibility.public,
       playSound: prefs.sound,
       enableVibration: prefs.vibration,
       autoCancel: true,
@@ -444,7 +451,7 @@ class NotificationService {
     await zapiLocalNotifications.show(
       chatId.hashCode,
       title,
-      body,
+      displayBody,
       NotificationDetails(android: androidDetails),
       payload: chatId,
     );
@@ -502,11 +509,12 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
     auth: ref.watch(firebaseAuthProvider),
     firestore: ref.watch(firebaseFirestoreProvider),
     isChatMuted: (chatId) => ref.read(chatPreferencesProvider).isMuted(chatId),
-    readSoundVibration: () {
+    readNotificationPrefs: () {
       final prefs = ref.read(chatPreferencesProvider);
       return (
         sound: prefs.notifSoundEnabled,
         vibration: prefs.notifVibrationEnabled,
+        hidePreview: prefs.notifHidePreview,
       );
     },
   );

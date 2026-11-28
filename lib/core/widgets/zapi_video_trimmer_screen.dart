@@ -57,6 +57,7 @@ class _ZapiVideoTrimmerScreenState extends State<ZapiVideoTrimmerScreen> {
   int _startMs = 0;
   int _endMs = 0;
   int _originalSizeBytes = 0;
+  bool _removeAudio = false;
 
   @override
   void initState() {
@@ -83,6 +84,7 @@ class _ZapiVideoTrimmerScreenState extends State<ZapiVideoTrimmerScreen> {
       final controller = VideoPlayerController.file(file);
       await controller.initialize();
       await controller.setLooping(true);
+      await controller.setVolume(_removeAudio ? 0.0 : 1.0);
       controller.addListener(_onPlayerTick);
 
       final nativeMeta =
@@ -154,6 +156,12 @@ class _ZapiVideoTrimmerScreenState extends State<ZapiVideoTrimmerScreen> {
     _controller?.seekTo(Duration(milliseconds: _startMs));
   }
 
+  Future<void> _toggleRemoveAudio() async {
+    final next = !_removeAudio;
+    setState(() => _removeAudio = next);
+    await _controller?.setVolume(next ? 0.0 : 1.0);
+  }
+
   Future<void> _confirmAndTrim() async {
     if (_preparingOutput || _controller == null) return;
     setState(() => _preparingOutput = true);
@@ -165,6 +173,7 @@ class _ZapiVideoTrimmerScreenState extends State<ZapiVideoTrimmerScreen> {
         startMs: _startMs,
         endMs: _endMs,
         maxBytes: widget.maxBytes,
+        removeAudio: _removeAudio,
       );
       if (!mounted) return;
       Navigator.pop(
@@ -193,7 +202,11 @@ class _ZapiVideoTrimmerScreenState extends State<ZapiVideoTrimmerScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final selectedDuration = Duration(milliseconds: (_endMs - _startMs).clamp(0, 60000));
+    final selectedDuration =
+        Duration(milliseconds: (_endMs - _startMs).clamp(0, widget.maxDurationMs));
+    final maxDurLabel = DateFormatter.formatDuration(
+      Duration(milliseconds: widget.maxDurationMs),
+    );
     final originalSizeMb = (_originalSizeBytes / (1024 * 1024)).toStringAsFixed(1);
 
     return Scaffold(
@@ -202,6 +215,27 @@ class _ZapiVideoTrimmerScreenState extends State<ZapiVideoTrimmerScreen> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: const Text('Recortar vídeo'),
+        actions: [
+          if (!_loading && _loadError == null)
+            TextButton.icon(
+              onPressed: _preparingOutput ? null : _toggleRemoveAudio,
+              icon: Icon(
+                _removeAudio
+                    ? Icons.volume_off_rounded
+                    : Icons.volume_up_rounded,
+                color: _removeAudio ? AppColors.emeraldBright : Colors.white,
+                size: 20,
+              ),
+              label: Text(
+                _removeAudio ? 'Sem áudio' : 'Com áudio',
+                style: TextStyle(
+                  color: _removeAudio ? AppColors.emeraldBright : Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                ),
+              ),
+            ),
+        ],
       ),
       body: _loading
           ? const Center(
@@ -287,7 +321,7 @@ class _ZapiVideoTrimmerScreenState extends State<ZapiVideoTrimmerScreen> {
                                     ),
                                     const Spacer(),
                                     Text(
-                                      'Máx 1:00 · Orig. $originalSizeMb MB',
+                                      'Máx $maxDurLabel · Orig. $originalSizeMb MB',
                                       style: const TextStyle(
                                         color: Colors.white60,
                                         fontSize: 12,

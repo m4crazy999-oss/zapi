@@ -1,10 +1,9 @@
-Câmera própria, editor de fotos, vídeos de 1 minuto, mascote e privacidade
-- Novo: Câmera própria dentro do app com foto por toque, vídeo ao segurar, flash, troca de lente, zoom por gesto e faixa de mídia recente com seleção múltipla
-- Novo: Editor de foto antes de enviar no chat e no Status (desenho livre com desfazer/refazer, recorte, rotação, textos e figurinhas/emojis com toque)
-- Novo: Envio de arquivos pelo clipe (PDF, documentos, áudio e outros) com visualização, abertura e salvamento direto na conversa
-- Novo: Vídeos de até 1 minuto no chat e no Status com recorte de início/fim e compressão inteligente
-- Novo: Status de texto aprimorado com fontes, alinhamentos, tamanhos, cores e fundos em degradê sem bordas ao redor do texto
-- Novo: Pausar e retomar no meio da gravação e da reprodução de áudio
-- Novo: Mascote vetorial do Zapi em carregamento, login e listas vazias, além de seletor completo de emojis Unicode sem figurinhas padrão
-- Novo: Fixar conversas no topo, silenciar por conversa, reações rápidas, rascunho salvo automaticamente, busca dentro da conversa, encaminhamento, bloqueio por PIN/biometria e privacidade de visto por último e leitura
-- Melhorado: Fundos sutis de conversa claros e escuros, ajustes reorganizados e avisos claros sem termos técnicos
+Correções de áudio e notificações, filtros no editor, Status aprimorado e temas de destaque
+- Novo: 5 cores de destaque personalizáveis no app (Esmeralda, Oceano, Violeta, Âmbar e Rosa) com aplicação instantânea
+- Novo: Mini-player persistente no topo da conversa para pausar, retomar, avançar e ajustar a velocidade do áudio
+- Novo: Pré-escuta de áudio antes de enviar na gravação travada e confirmação ao fechar o editor de fotos com alterações
+- Novo: Filtros (Original, Claro, Quente, Frio, P&B) e ajuste de brilho no editor de fotos, além de opção para remover áudio no corte de vídeo
+- Novo: Status com lista única, anel segmentado por atualização, 6 fontes, negrito/itálico, caixa de texto, foto da galeria e texto arrastável
+- Novo: Arquivar conversas, controle de quem pode adicionar por ID/@usuário, ocultação de prévia nas notificações, QR Code do seu ID e mídias compartilhadas no perfil do contato
+- Melhorado: Navegação simplificada em 3 abas (Conversas, Status e Contatos) com atalhos de Configurações e Perfil sempre visíveis
+- Corrigido: Pausa de áudio em reprodução, envio garantido de notificações em segundo plano e estabilidade do carregamento no editor

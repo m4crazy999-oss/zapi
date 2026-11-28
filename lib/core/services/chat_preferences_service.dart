@@ -12,6 +12,7 @@ class ChatPreferencesState {
     this.isLoaded = false,
     this.mutedChatIds = const {},
     this.pinnedChatIds = const {},
+    this.archivedChatIds = const {},
     this.chatDrafts = const {},
     this.mutedStatusUids = const {},
     this.viewedStatusIds = const {},
@@ -19,6 +20,10 @@ class ChatPreferencesState {
     this.statusCustomUids = const {},
     this.notifSoundEnabled = true,
     this.notifVibrationEnabled = true,
+    this.notifHidePreview = false,
+    this.chatFontSize = 'medium',
+    this.enterToSend = false,
+    this.autoDownloadMedia = 'always',
     this.appLockEnabled = false,
     this.appLockPinHash,
     this.appLockUseDeviceBiometric = false,
@@ -27,6 +32,7 @@ class ChatPreferencesState {
   final bool isLoaded;
   final Set<String> mutedChatIds;
   final Set<String> pinnedChatIds;
+  final Set<String> archivedChatIds;
   final Map<String, String> chatDrafts;
   final Set<String> mutedStatusUids;
   final Set<String> viewedStatusIds;
@@ -34,22 +40,34 @@ class ChatPreferencesState {
   final Set<String> statusCustomUids;
   final bool notifSoundEnabled;
   final bool notifVibrationEnabled;
+  final bool notifHidePreview;
+  final String chatFontSize;
+  final bool enterToSend;
+  final String autoDownloadMedia;
   final bool appLockEnabled;
   final String? appLockPinHash;
   final bool appLockUseDeviceBiometric;
 
   bool isMuted(String chatId) => mutedChatIds.contains(chatId);
   bool isPinned(String chatId) => pinnedChatIds.contains(chatId);
+  bool isArchived(String chatId) => archivedChatIds.contains(chatId);
   String draftFor(String chatId) => chatDrafts[chatId] ?? '';
   bool isStatusMuted(String uid) => mutedStatusUids.contains(uid);
   bool isStatusViewed(String statusId) => viewedStatusIds.contains(statusId);
   bool get hasAppLockConfigured =>
       appLockEnabled && (appLockPinHash?.isNotEmpty ?? false);
 
+  double get messageFontSize => switch (chatFontSize) {
+        'small' => 13.5,
+        'large' => 17.0,
+        _ => 15.0,
+      };
+
   ChatPreferencesState copyWith({
     bool? isLoaded,
     Set<String>? mutedChatIds,
     Set<String>? pinnedChatIds,
+    Set<String>? archivedChatIds,
     Map<String, String>? chatDrafts,
     Set<String>? mutedStatusUids,
     Set<String>? viewedStatusIds,
@@ -57,6 +75,10 @@ class ChatPreferencesState {
     Set<String>? statusCustomUids,
     bool? notifSoundEnabled,
     bool? notifVibrationEnabled,
+    bool? notifHidePreview,
+    String? chatFontSize,
+    bool? enterToSend,
+    String? autoDownloadMedia,
     bool? appLockEnabled,
     String? appLockPinHash,
     bool clearAppLockPin = false,
@@ -66,6 +88,7 @@ class ChatPreferencesState {
       isLoaded: isLoaded ?? this.isLoaded,
       mutedChatIds: mutedChatIds ?? this.mutedChatIds,
       pinnedChatIds: pinnedChatIds ?? this.pinnedChatIds,
+      archivedChatIds: archivedChatIds ?? this.archivedChatIds,
       chatDrafts: chatDrafts ?? this.chatDrafts,
       mutedStatusUids: mutedStatusUids ?? this.mutedStatusUids,
       viewedStatusIds: viewedStatusIds ?? this.viewedStatusIds,
@@ -74,6 +97,10 @@ class ChatPreferencesState {
       notifSoundEnabled: notifSoundEnabled ?? this.notifSoundEnabled,
       notifVibrationEnabled:
           notifVibrationEnabled ?? this.notifVibrationEnabled,
+      notifHidePreview: notifHidePreview ?? this.notifHidePreview,
+      chatFontSize: chatFontSize ?? this.chatFontSize,
+      enterToSend: enterToSend ?? this.enterToSend,
+      autoDownloadMedia: autoDownloadMedia ?? this.autoDownloadMedia,
       appLockEnabled: appLockEnabled ?? this.appLockEnabled,
       appLockPinHash:
           clearAppLockPin ? null : (appLockPinHash ?? this.appLockPinHash),
@@ -119,6 +146,7 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
       }
       final rawMuted = decoded['mutedChatIds'];
       final rawPinned = decoded['pinnedChatIds'];
+      final rawArchived = decoded['archivedChatIds'];
       final rawDrafts = decoded['chatDrafts'];
       final rawMutedStatus = decoded['mutedStatusUids'];
       final rawViewedStatus = decoded['viewedStatusIds'];
@@ -126,6 +154,10 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
       final rawCustomUids = decoded['statusCustomUids'];
       final rawSound = decoded['notifSoundEnabled'];
       final rawVibration = decoded['notifVibrationEnabled'];
+      final rawHidePreview = decoded['notifHidePreview'];
+      final rawFontSize = decoded['chatFontSize'];
+      final rawEnterToSend = decoded['enterToSend'];
+      final rawAutoDownload = decoded['autoDownloadMedia'];
       final rawLockEnabled = decoded['appLockEnabled'];
       final rawLockPinHash = decoded['appLockPinHash'];
       final rawLockBio = decoded['appLockUseDeviceBiometric'];
@@ -141,6 +173,7 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
 
       final nextSound = rawSound is bool ? rawSound : true;
       final nextVibration = rawVibration is bool ? rawVibration : true;
+      final nextHidePreview = rawHidePreview is bool ? rawHidePreview : false;
 
       if (ref.mounted) {
         state = ChatPreferencesState(
@@ -150,6 +183,9 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
               : const {},
           pinnedChatIds: rawPinned is List
               ? rawPinned.whereType<String>().toSet()
+              : const {},
+          archivedChatIds: rawArchived is List
+              ? rawArchived.whereType<String>().toSet()
               : const {},
           chatDrafts: drafts,
           mutedStatusUids: rawMutedStatus is List
@@ -169,6 +205,15 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
               : const {},
           notifSoundEnabled: nextSound,
           notifVibrationEnabled: nextVibration,
+          notifHidePreview: nextHidePreview,
+          chatFontSize: (rawFontSize == 'small' || rawFontSize == 'large')
+              ? rawFontSize as String
+              : 'medium',
+          enterToSend: rawEnterToSend is bool ? rawEnterToSend : false,
+          autoDownloadMedia:
+              (rawAutoDownload == 'wifi' || rawAutoDownload == 'never')
+                  ? rawAutoDownload as String
+                  : 'always',
           appLockEnabled: rawLockEnabled is bool ? rawLockEnabled : false,
           appLockPinHash: rawLockPinHash is String ? rawLockPinHash : null,
           appLockUseDeviceBiometric: rawLockBio is bool ? rawLockBio : false,
@@ -176,6 +221,7 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
         await NotificationService.syncNativeSoundVibration(
           sound: nextSound,
           vibration: nextVibration,
+          hidePreview: nextHidePreview,
         );
       }
     } catch (_) {
@@ -196,6 +242,7 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
         jsonEncode({
           'mutedChatIds': state.mutedChatIds.toList(),
           'pinnedChatIds': state.pinnedChatIds.toList(),
+          'archivedChatIds': state.archivedChatIds.toList(),
           'chatDrafts': state.chatDrafts,
           'mutedStatusUids': state.mutedStatusUids.toList(),
           'viewedStatusIds': trimmedViewed,
@@ -203,6 +250,10 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
           'statusCustomUids': state.statusCustomUids.toList(),
           'notifSoundEnabled': state.notifSoundEnabled,
           'notifVibrationEnabled': state.notifVibrationEnabled,
+          'notifHidePreview': state.notifHidePreview,
+          'chatFontSize': state.chatFontSize,
+          'enterToSend': state.enterToSend,
+          'autoDownloadMedia': state.autoDownloadMedia,
           'appLockEnabled': state.appLockEnabled,
           'appLockPinHash': state.appLockPinHash,
           'appLockUseDeviceBiometric': state.appLockUseDeviceBiometric,
@@ -233,6 +284,18 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
       next.remove(chatId);
     }
     state = state.copyWith(pinnedChatIds: next);
+    await _saveToDisk();
+  }
+
+  Future<void> setChatArchived(String chatId, bool archived) async {
+    if (chatId.isEmpty) return;
+    final next = Set<String>.from(state.archivedChatIds);
+    if (archived) {
+      next.add(chatId);
+    } else {
+      next.remove(chatId);
+    }
+    state = state.copyWith(archivedChatIds: next);
     await _saveToDisk();
   }
 
@@ -294,6 +357,7 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
     await NotificationService.syncNativeSoundVibration(
       sound: state.notifSoundEnabled,
       vibration: state.notifVibrationEnabled,
+      hidePreview: state.notifHidePreview,
     );
   }
 
@@ -304,7 +368,41 @@ class ChatPreferencesNotifier extends Notifier<ChatPreferencesState> {
     await NotificationService.syncNativeSoundVibration(
       sound: state.notifSoundEnabled,
       vibration: state.notifVibrationEnabled,
+      hidePreview: state.notifHidePreview,
     );
+  }
+
+  Future<void> setNotificationHidePreview(bool hidePreview) async {
+    if (state.notifHidePreview == hidePreview) return;
+    state = state.copyWith(notifHidePreview: hidePreview);
+    await _saveToDisk();
+    await NotificationService.syncNativeSoundVibration(
+      sound: state.notifSoundEnabled,
+      vibration: state.notifVibrationEnabled,
+      hidePreview: state.notifHidePreview,
+    );
+  }
+
+  Future<void> setChatFontSize(String size) async {
+    final normalized =
+        (size == 'small' || size == 'large') ? size : 'medium';
+    if (state.chatFontSize == normalized) return;
+    state = state.copyWith(chatFontSize: normalized);
+    await _saveToDisk();
+  }
+
+  Future<void> setEnterToSend(bool enabled) async {
+    if (state.enterToSend == enabled) return;
+    state = state.copyWith(enterToSend: enabled);
+    await _saveToDisk();
+  }
+
+  Future<void> setAutoDownloadMedia(String mode) async {
+    final normalized =
+        (mode == 'wifi' || mode == 'never') ? mode : 'always';
+    if (state.autoDownloadMedia == normalized) return;
+    state = state.copyWith(autoDownloadMedia: normalized);
+    await _saveToDisk();
   }
 
   Future<void> enableAppLock({

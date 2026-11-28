@@ -4,13 +4,15 @@ import 'app_colors.dart';
 class AppTheme {
   AppTheme._();
 
-  static ThemeData get light {
+  static ThemeData get light => lightTheme(AccentPreset.esmeralda);
+
+  static ThemeData lightTheme(AccentPreset accent) {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: AppColors.emerald,
+      seedColor: accent.primaryLight,
       brightness: Brightness.light,
-      primary: AppColors.emerald,
+      primary: accent.primaryLight,
       onPrimary: Colors.white,
-      secondary: AppColors.emeraldDark,
+      secondary: accent.secondaryLight,
       surface: AppColors.lightSurface,
       onSurface: AppColors.lightTextPrimary,
       error: AppColors.errorLight,
@@ -57,7 +59,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.emerald, width: 1.8),
+          borderSide: BorderSide(color: accent.primaryLight, width: 1.8),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -72,7 +74,7 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.emerald,
+          backgroundColor: accent.primaryLight,
           foregroundColor: Colors.white,
           minimumSize: const Size.fromHeight(52),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -90,7 +92,7 @@ class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: AppColors.lightSurface,
-        indicatorColor: AppColors.emerald.withValues(alpha: 0.14),
+        indicatorColor: accent.primaryLight.withValues(alpha: 0.14),
         elevation: 2,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final isSelected = states.contains(WidgetState.selected);
@@ -98,7 +100,7 @@ class AppTheme {
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
             color: isSelected
-                ? AppColors.emeraldDark
+                ? accent.secondaryLight
                 : AppColors.lightTextSecondary,
           );
         }),
@@ -106,7 +108,7 @@ class AppTheme {
           final isSelected = states.contains(WidgetState.selected);
           return IconThemeData(
             color: isSelected
-                ? AppColors.emeraldDark
+                ? accent.secondaryLight
                 : AppColors.lightTextSecondary,
           );
         }),
@@ -132,13 +134,15 @@ class AppTheme {
     );
   }
 
-  static ThemeData get dark {
+  static ThemeData get dark => darkTheme(AccentPreset.esmeralda);
+
+  static ThemeData darkTheme(AccentPreset accent) {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: AppColors.emeraldBright,
+      seedColor: accent.primaryDark,
       brightness: Brightness.dark,
-      primary: AppColors.emeraldBright,
-      onPrimary: const Color(0xFF04221B),
-      secondary: AppColors.emerald,
+      primary: accent.primaryDark,
+      onPrimary: accent.onPrimaryDark,
+      secondary: accent.secondaryDark,
       surface: AppColors.darkSurface,
       onSurface: AppColors.darkTextPrimary,
       error: AppColors.errorDark,
@@ -185,7 +189,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.emeraldBright, width: 1.8),
+          borderSide: BorderSide(color: accent.primaryDark, width: 1.8),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -200,8 +204,8 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: AppColors.emeraldBright,
-          foregroundColor: const Color(0xFF04221B),
+          backgroundColor: accent.primaryDark,
+          foregroundColor: accent.onPrimaryDark,
           minimumSize: const Size.fromHeight(52),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -218,7 +222,7 @@ class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: AppColors.darkSurface,
-        indicatorColor: AppColors.emeraldBright.withValues(alpha: 0.16),
+        indicatorColor: accent.primaryDark.withValues(alpha: 0.16),
         elevation: 2,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final isSelected = states.contains(WidgetState.selected);
@@ -226,7 +230,7 @@ class AppTheme {
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
             color: isSelected
-                ? AppColors.emeraldBright
+                ? accent.primaryDark
                 : AppColors.darkTextSecondary,
           );
         }),
@@ -234,7 +238,7 @@ class AppTheme {
           final isSelected = states.contains(WidgetState.selected);
           return IconThemeData(
             color: isSelected
-                ? AppColors.emeraldBright
+                ? accent.primaryDark
                 : AppColors.darkTextSecondary,
           );
         }),

@@ -111,6 +111,12 @@ class ZapiMessageService : Service() {
             }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        ZapiMessageNotifier.setAppForeground(applicationContext, false)
+        ZapiMessageNotifier.setActiveChatId(applicationContext, null)
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         listenerRegistration?.remove()
         listenerRegistration = null

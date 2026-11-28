@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -97,6 +98,14 @@ class StatusRepository {
     String fontStyle = 'sans',
     String textAlign = 'center',
     double fontSize = 26.0,
+    double textPosX = 0.5,
+    double textPosY = 0.5,
+    double textScale = 1.0,
+    double textRotation = 0.0,
+    bool isBold = true,
+    bool isItalic = false,
+    bool withPill = false,
+    String? backgroundPhotoPath,
     required List<AppContact> contacts,
     required StatusPrivacyMode privacyMode,
     Set<String> customUids = const {},
@@ -110,6 +119,24 @@ class StatusRepository {
         'O texto do Status passa do limite permitido.',
       );
     }
+
+    String? imageBase64;
+    if (backgroundPhotoPath != null && backgroundPhotoPath.trim().isNotEmpty) {
+      final compressedBytes =
+          await MediaProcessor.prepareStatusPhoto(backgroundPhotoPath);
+      final encoded = base64Encode(compressedBytes);
+      if (compressedBytes.length > AppConstants.maxStatusImageBytes ||
+          encoded.length > AppConstants.maxStatusImageBase64Chars) {
+        throw const AppException(
+          'A foto de fundo ficou pesada demais para o Status.',
+        );
+      }
+      imageBase64 = encoded;
+    }
+
+    final normalizedRotation = math
+        .atan2(math.sin(textRotation), math.cos(textRotation))
+        .clamp(-6.28, 6.28);
 
     final allowedUids = _buildAllowedUids(
       ownerUid: owner.uid,
@@ -138,7 +165,14 @@ class StatusRepository {
         'fontStyle': fontStyle,
         'textAlign': textAlign,
         'fontSize': fontSize.clamp(12.0, 48.0),
-        'imageBase64': null,
+        'textPosX': textPosX.clamp(0.05, 0.95),
+        'textPosY': textPosY.clamp(0.08, 0.92),
+        'textScale': textScale.clamp(0.4, 3.0),
+        'textRotation': normalizedRotation,
+        'isBold': isBold,
+        'isItalic': isItalic,
+        'withPill': withPill,
+        'imageBase64': imageBase64,
         'videoBase64': null,
         'privacyMode': privacyMode.code,
         'allowedUids': allowedUids,
@@ -263,7 +297,10 @@ class StatusRepository {
         'backgroundColor': 0xFF0B141A,
         'imageBase64': null,
         'videoBase64': videoBase64,
-        'durationMs': durationMs.clamp(0, 60000),
+        'durationMs': durationMs.clamp(
+          0,
+          AppConstants.maxStatusVideoDuration.inMilliseconds,
+        ),
         'privacyMode': privacyMode.code,
         'allowedUids': allowedUids,
         'createdAt': Timestamp.fromDate(now),

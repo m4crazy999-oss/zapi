@@ -48,8 +48,9 @@ class ContactsRepository {
 
     try {
       String? targetUid;
+      final searchedByPublicId = PublicIdHelper.looksLikePublicId(trimmed);
 
-      if (PublicIdHelper.looksLikePublicId(trimmed)) {
+      if (searchedByPublicId) {
         final normalizedId = PublicIdHelper.normalize(trimmed);
         if (!PublicIdHelper.isValid(normalizedId)) {
           throw const AppException(
@@ -103,6 +104,17 @@ class ContactsRepository {
       if (foundUser.uid == currentUid) {
         throw const AppException(
           'Você não pode adicionar a si mesmo aos contatos.',
+        );
+      }
+
+      if (foundUser.addPrivacy == 'idOnly' && !searchedByPublicId) {
+        throw const AppException(
+          'Este usuário aceita ser encontrado apenas pelo ID (ZP-...).',
+        );
+      }
+      if (foundUser.addPrivacy == 'usernameOnly' && searchedByPublicId) {
+        throw const AppException(
+          'Este usuário aceita ser encontrado apenas pelo @usuário.',
         );
       }
 

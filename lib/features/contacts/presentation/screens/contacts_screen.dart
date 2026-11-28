@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/chat_id_helper.dart';
+import '../../../../core/utils/zapi_toast.dart';
 import '../../../../core/widgets/shimmer_skeleton.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../profile/presentation/providers/profile_providers.dart';
 import '../../domain/app_contact.dart';
 import '../providers/contacts_providers.dart';
 
@@ -41,21 +44,55 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     context.push('/chats/$chatId/profile');
   }
 
+  Future<void> _toggleFavorite(AppContact contact) async {
+    try {
+      await ref.read(contactsControllerProvider.notifier).setFavorite(
+            contactUid: contact.contactUid,
+            isFavorite: !contact.isFavorite,
+          );
+    } on AppException catch (e) {
+      if (!mounted) return;
+      ZapiToast.showError(context, e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final contactsAsync = ref.watch(filteredContactsProvider);
     final query = ref.watch(contactsSearchQueryProvider);
+    final myUser = ref.watch(currentUserProfileProvider).value;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
+    final accentColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Contatos'),
+        actions: [
+          IconButton(
+            tooltip: 'Configurações',
+            icon: const Icon(Icons.settings_rounded),
+            onPressed: () => context.push('/settings'),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => context.push('/profile'),
+              child: ZapiAvatar(
+                displayName: myUser?.displayName ?? 'Você',
+                photoBase64: myUser?.photoBase64,
+                photoUrl: myUser?.photoUrl,
+                radius: 17,
+              ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/contacts/add'),
-        backgroundColor: AppColors.emerald,
+        backgroundColor: accentColor,
         foregroundColor: Colors.white,
         tooltip: 'Adicionar contato por ID',
         icon: const Icon(Icons.person_add_alt_1_rounded),
@@ -187,6 +224,20 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: secondaryText, fontSize: 13.5),
+                      ),
+                      trailing: IconButton(
+                        tooltip: contact.isFavorite
+                            ? 'Remover dos favoritos'
+                            : 'Marcar como favorito',
+                        onPressed: () => _toggleFavorite(contact),
+                        icon: Icon(
+                          contact.isFavorite
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: contact.isFavorite
+                              ? const Color(0xFFF59E0B)
+                              : secondaryText,
+                        ),
                       ),
                       onTap: () => _openChat(contact),
                       onLongPress: () => _openPeerProfile(contact),

@@ -38,6 +38,9 @@ object ZapiMessageNotifier {
     private const val KEY_BG_ENABLED = "bg_enabled"
     private const val KEY_NOTIF_SOUND = "notif_sound"
     private const val KEY_NOTIF_VIBRATION = "notif_vibration"
+    private const val KEY_HIDE_PREVIEW = "notif_hide_preview"
+    private const val KEY_APP_FOREGROUND = "app_foreground"
+    private const val KEY_ACTIVE_CHAT_ID = "active_chat_id"
     private const val KEY_LAST_NOTIFIED_PREFIX = "last_notified_"
 
     @Volatile
@@ -65,11 +68,23 @@ object ZapiMessageNotifier {
         return prefs(context).getBoolean(KEY_NOTIF_VIBRATION, true)
     }
 
-    fun setSoundAndVibration(context: Context, sound: Boolean, vibration: Boolean) {
-        prefs(context).edit()
+    fun isHidePreviewEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(KEY_HIDE_PREVIEW, false)
+    }
+
+    fun setSoundAndVibration(
+        context: Context,
+        sound: Boolean,
+        vibration: Boolean,
+        hidePreview: Boolean? = null
+    ) {
+        val editor = prefs(context).edit()
             .putBoolean(KEY_NOTIF_SOUND, sound)
             .putBoolean(KEY_NOTIF_VIBRATION, vibration)
-            .apply()
+        if (hidePreview != null) {
+            editor.putBoolean(KEY_HIDE_PREVIEW, hidePreview)
+        }
+        editor.apply()
     }
 
     private fun selectedMessageChannelId(context: Context): String {
@@ -84,19 +99,41 @@ object ZapiMessageNotifier {
     }
 
     fun isAppForeground(context: Context): Boolean {
-        return isAppForegroundVolatile
+        if (isAppForegroundVolatile) return true
+        val persisted = prefs(context).getBoolean(KEY_APP_FOREGROUND, false)
+        if (!persisted) return false
+
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            ?: return false
+        val myPid = android.os.Process.myPid()
+        val actuallyInForeground = am.runningAppProcesses?.any {
+            it.pid == myPid &&
+                it.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        } == true
+        if (!actuallyInForeground) {
+            prefs(context).edit().putBoolean(KEY_APP_FOREGROUND, false).apply()
+        }
+        return actuallyInForeground
     }
 
     fun setAppForeground(context: Context, isForeground: Boolean) {
         isAppForegroundVolatile = isForeground
+        prefs(context).edit().putBoolean(KEY_APP_FOREGROUND, isForeground).apply()
     }
 
     fun getActiveChatId(context: Context): String? {
-        return activeChatIdVolatile
+        return activeChatIdVolatile ?: prefs(context).getString(KEY_ACTIVE_CHAT_ID, null)
     }
 
     fun setActiveChatId(context: Context, chatId: String?) {
         activeChatIdVolatile = chatId
+        val editor = prefs(context).edit()
+        if (chatId.isNullOrEmpty()) {
+            editor.remove(KEY_ACTIVE_CHAT_ID)
+        } else {
+            editor.putString(KEY_ACTIVE_CHAT_ID, chatId)
+        }
+        editor.apply()
         if (!chatId.isNullOrEmpty()) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             manager?.cancel(chatId.hashCode())
@@ -292,7 +329,7 @@ object ZapiMessageNotifier {
             val ts = doc.get("lastMessageAt") as? Timestamp
             val msgTimeMs = ts?.toDate()?.time
                 ?: (doc.get("lastMessageClientAt") as? Number)?.toLong()
-            val isFresh = msgTimeMs != null && kotlin.math.abs(nowMs - msgTimeMs) <= 90_000L
+            val isFresh = msgTimeMs != null && kotlin.math.abs(nowMs - msgTimeMs) <= 15L * 60L * 1000L
             if (!isFresh) {
                 markMessageNotified(context, chatId, msgId)
                 return
@@ -316,9 +353,14 @@ object ZapiMessageNotifier {
         val title = (senderProfile?.get("displayName") as? String)
             ?.takeIf { it.isNotBlank() }
             ?: "Nova mensagem"
-        val body = doc.getString("lastMessage")
-            ?.takeIf { it.isNotBlank() }
-            ?: "Nova mensagem"
+        val hidePreview = isHidePreviewEnabled(context)
+        val body = if (hidePreview) {
+            "Nova mensagem"
+        } else {
+            doc.getString("lastMessage")
+                ?.takeIf { it.isNotBlank() }
+                ?: "Nova mensagem"
+        }
 
         showMessageNotification(
             context = context,
@@ -371,15 +413,19 @@ object ZapiMessageNotifier {
                 .setDefaults(defaults)
         }
 
+        val hidePreview = isHidePreviewEnabled(context)
+        val displayBody = if (hidePreview) "Nova mensagem" else body
         val notification = builder
             .setSmallIcon(R.drawable.ic_stat_zapi)
             .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(Notification.BigTextStyle().bigText(body))
+            .setContentText(displayBody)
+            .setStyle(Notification.BigTextStyle().bigText(displayBody))
             .setColor(0xFF00A884.toInt())
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_MESSAGE)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setVisibility(
+                if (hidePreview) Notification.VISIBILITY_PRIVATE else Notification.VISIBILITY_PUBLIC
+            )
             .setContentIntent(pendingIntent)
             .build()
 

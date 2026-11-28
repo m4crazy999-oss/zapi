@@ -55,6 +55,13 @@ class StatusItem {
     this.fontStyle = 'sans',
     this.textAlign = 'center',
     this.fontSize = 26.0,
+    this.textPosX = 0.5,
+    this.textPosY = 0.5,
+    this.textScale = 1.0,
+    this.textRotation = 0.0,
+    this.isBold = true,
+    this.isItalic = false,
+    this.withPill = false,
   });
 
   final String id;
@@ -67,9 +74,16 @@ class StatusItem {
   final int backgroundColor;
   final int? backgroundGradientEnd;
   final int? textColor;
-  final String fontStyle; // 'sans' | 'serif' | 'mono' | 'display'
+  final String fontStyle; // 'sans' | 'serif' | 'mono' | 'display' | 'handwriting' | 'condensed'
   final String textAlign; // 'left' | 'center' | 'right'
   final double fontSize;
+  final double textPosX;
+  final double textPosY;
+  final double textScale;
+  final double textRotation;
+  final bool isBold;
+  final bool isItalic;
+  final bool withPill;
   final String? imageBase64;
   final String? videoBase64;
   final int? durationMs;
@@ -185,6 +199,14 @@ class StatusItem {
       fontStyle: (data['fontStyle'] as String?) ?? 'sans',
       textAlign: (data['textAlign'] as String?) ?? 'center',
       fontSize: ((data['fontSize'] as num?)?.toDouble() ?? 26.0).clamp(14.0, 44.0),
+      textPosX: ((data['textPosX'] as num?)?.toDouble() ?? 0.5).clamp(0.05, 0.95),
+      textPosY: ((data['textPosY'] as num?)?.toDouble() ?? 0.5).clamp(0.08, 0.92),
+      textScale: ((data['textScale'] as num?)?.toDouble() ?? 1.0).clamp(0.4, 3.0),
+      textRotation:
+          ((data['textRotation'] as num?)?.toDouble() ?? 0.0).clamp(-6.28, 6.28),
+      isBold: data['isBold'] is bool ? data['isBold'] as bool : true,
+      isItalic: data['isItalic'] is bool ? data['isItalic'] as bool : false,
+      withPill: data['withPill'] is bool ? data['withPill'] as bool : false,
       imageBase64: data['imageBase64'] as String?,
       videoBase64: data['videoBase64'] as String?,
       durationMs: (data['durationMs'] as num?)?.toInt(),

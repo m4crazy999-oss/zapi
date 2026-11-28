@@ -343,12 +343,88 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  void _showQrCodeDialog(AppUser user) {
+    final codeValue =
+        user.publicId.isNotEmpty ? user.publicId : '@${user.username}';
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        final isDark = Theme.of(dialogCtx).brightness == Brightness.dark;
+        final accent = isDark ? AppColors.emeraldBright : AppColors.emeraldDark;
+        return AlertDialog(
+          title: const Text('Meu QR Code'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: AppColors.emerald.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: CustomPaint(
+                  size: const Size(184, 184),
+                  painter: _ZapiQrPainter(seedText: codeValue),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                user.displayName,
+                textAlign: TextAlign.center,
+                style: Theme.of(dialogCtx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              if (user.username.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  '@${user.username}',
+                  style: TextStyle(
+                    color: accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              if (user.publicId.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                SelectableText(
+                  user.publicId,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0,
+                    color: isDark
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                _copyIdentifier(codeValue, 'ID');
+                ZapiToast.showInfo(dialogCtx, 'Código copiado.');
+              },
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              label: const Text('Copiar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Fechar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(currentUserProfileProvider);
-    final privateEmail = ref.watch(privateAccountEmailProvider).value ??
-        ref.watch(firebaseAuthProvider).currentUser?.email ??
-        '';
     final profileMutation = ref.watch(profileControllerProvider);
     final isSaving = profileMutation.isLoading &&
         !_isUploadingPhoto &&
@@ -507,8 +583,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: (user.hideLastSeen
+                              ? secondaryText
+                              : AppColors.emerald)
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: user.hideLastSeen
+                                ? secondaryText
+                                : AppColors.emerald,
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Text(
+                          user.hideLastSeen
+                              ? 'Visto por último oculto'
+                              : 'Online agora',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: user.hideLastSeen
+                                ? secondaryText
+                                : (isDark
+                                    ? AppColors.emeraldBright
+                                    : AppColors.emeraldDark),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 440),
@@ -536,13 +658,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                               : AppColors.emeraldDark,
                                         ),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          'Seu ID exclusivo e @usuário',
-                                          style: TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: secondaryText,
+                                        Expanded(
+                                          child: Text(
+                                            'Seu ID exclusivo e @usuário',
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: secondaryText,
+                                            ),
                                           ),
+                                        ),
+                                        TextButton.icon(
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                          ),
+                                          onPressed: () =>
+                                              _showQrCodeDialog(user),
+                                          icon: const Icon(
+                                            Icons.qr_code_rounded,
+                                            size: 16,
+                                          ),
+                                          label: const Text('QR Code'),
                                         ),
                                       ],
                                     ),
@@ -762,19 +904,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               maxLines: 2,
                               validator: Validators.validateAbout,
                             ),
-                            const SizedBox(height: 12),
-                            Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.lock_rounded),
-                                title: const Text('E-mail privado da conta'),
-                                subtitle: Text(
-                                  privateEmail.isNotEmpty
-                                      ? '$privateEmail\nVisível apenas para você'
-                                      : 'Visível apenas para você',
-                                ),
-                                isThreeLine: privateEmail.isNotEmpty,
-                              ),
-                            ),
                             const SizedBox(height: 22),
                             FilledButton(
                               onPressed: (isSaving ||
@@ -806,4 +935,67 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
+}
+
+class _ZapiQrPainter extends CustomPainter {
+  const _ZapiQrPainter({required this.seedText});
+
+  final String seedText;
+
+  static const int _gridSize = 21;
+
+  bool _inFinder(int r, int c) {
+    final topLeft = r < 7 && c < 7;
+    final topRight = r < 7 && c >= _gridSize - 7;
+    final bottomLeft = r >= _gridSize - 7 && c < 7;
+    return topLeft || topRight || bottomLeft;
+  }
+
+  bool _finderModule(int lr, int lc) {
+    if (lr == 0 || lr == 6 || lc == 0 || lc == 6) return true;
+    if (lr == 1 || lr == 5 || lc == 1 || lc == 5) return false;
+    return lr >= 2 && lr <= 4 && lc >= 2 && lc <= 4;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final module = size.width / _gridSize;
+    final paint = Paint()..color = const Color(0xFF111B21);
+
+    var hash = 0x811C9DC5;
+    for (final unit in seedText.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0x7FFFFFFF;
+    }
+
+    for (var r = 0; r < _gridSize; r++) {
+      for (var c = 0; c < _gridSize; c++) {
+        bool filled;
+        if (_inFinder(r, c)) {
+          final lr = r >= _gridSize - 7 ? r - (_gridSize - 7) : r;
+          final lc = c >= _gridSize - 7 ? c - (_gridSize - 7) : c;
+          filled = _finderModule(lr, lc);
+        } else if ((r == 7 && (c < 8 || c >= _gridSize - 8)) ||
+            (c == 7 && (r < 8 || r >= _gridSize - 8)) ||
+            (r == _gridSize - 8 && c < 8)) {
+          filled = false;
+        } else if (r == 6 || c == 6) {
+          filled = (r + c).isEven;
+        } else {
+          final bitSeed = (hash ^ (r * 73856093) ^ (c * 19349663)) & 0x7FFFFFFF;
+          filled = ((bitSeed >> 3) & 1) == 1;
+        }
+        if (filled) {
+          canvas.drawRect(
+            Rect.fromLTWH(c * module, r * module, module + 0.3, module + 0.3),
+            paint,
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ZapiQrPainter oldDelegate) =>
+      oldDelegate.seedText != seedText;
 }
