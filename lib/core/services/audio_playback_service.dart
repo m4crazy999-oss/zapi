@@ -174,9 +174,8 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
 
     final isSameMessage = state.activeMessageId == messageId;
 
-    // Usa player.playing diretamente como fonte síncrona da verdade para evitar
-    // dessincronização por eventos assíncronos do stream em toques rápidos.
-    if (isSameMessage && player.playing) {
+    // Usa player.playing ou state.isPlaying como fonte da verdade para pausar imediatamente em toques rápidos.
+    if (isSameMessage && (player.playing || state.isPlaying)) {
       await pause();
       return;
     }
@@ -193,10 +192,21 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
           activeChatId: chatId ?? state.activeChatId,
           activeSenderName: senderName ?? state.activeSenderName,
           isPlaying: true,
+          isLoading: false,
           clearError: true,
         );
         onStarted?.call();
-        await player.play();
+        unawaited(
+          player.play().catchError((_) {
+            if (ref.mounted && _playbackGen == gen) {
+              state = state.copyWith(
+                isPlaying: false,
+                isLoading: false,
+                errorMessage: 'Não foi possível retomar este áudio.',
+              );
+            }
+          }),
+        );
       } catch (_) {
         if (ref.mounted) {
           state = state.copyWith(
@@ -262,8 +272,24 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
         return;
       }
 
+      state = state.copyWith(
+        isLoading: false,
+        isPlaying: true,
+        clearError: true,
+      );
       onStarted?.call();
-      await player.play();
+      unawaited(
+        player.play().catchError((_) {
+          _loadedSource = null;
+          if (ref.mounted && _playbackGen == gen) {
+            state = state.copyWith(
+              isLoading: false,
+              isPlaying: false,
+              errorMessage: 'Não foi possível reproduzir este áudio.',
+            );
+          }
+        }),
+      );
     } catch (_) {
       _loadedSource = null;
       if (ref.mounted) {
@@ -299,7 +325,7 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
   Future<void> pause() async {
     _playbackGen++;
     if (ref.mounted) {
-      state = state.copyWith(isPlaying: false);
+      state = state.copyWith(isPlaying: false, isLoading: false);
     }
     try {
       await _player?.pause();

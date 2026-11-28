@@ -1,9 +1,8 @@
-Correções de áudio e notificações, filtros no editor, Status aprimorado e temas de destaque
-- Novo: 5 cores de destaque personalizáveis no app (Esmeralda, Oceano, Violeta, Âmbar e Rosa) com aplicação instantânea
-- Novo: Mini-player persistente no topo da conversa para pausar, retomar, avançar e ajustar a velocidade do áudio
-- Novo: Pré-escuta de áudio antes de enviar na gravação travada e confirmação ao fechar o editor de fotos com alterações
-- Novo: Filtros (Original, Claro, Quente, Frio, P&B) e ajuste de brilho no editor de fotos, além de opção para remover áudio no corte de vídeo
-- Novo: Status com lista única, anel segmentado por atualização, 6 fontes, negrito/itálico, caixa de texto, foto da galeria e texto arrastável
-- Novo: Arquivar conversas, controle de quem pode adicionar por ID/@usuário, ocultação de prévia nas notificações, QR Code do seu ID e mídias compartilhadas no perfil do contato
-- Melhorado: Navegação simplificada em 3 abas (Conversas, Status e Contatos) com atalhos de Configurações e Perfil sempre visíveis
-- Corrigido: Pausa de áudio em reprodução, envio garantido de notificações em segundo plano e estabilidade do carregamento no editor
+Conexão instantânea, áudio fluido ao arrastar e Zapinho assistente virtual
+- Novo: Zapinho em nuvem cartunesca com braços e pernas, gestos ociosos e animação de fala em 60fps, abrindo o chat padrão da IA ao tocar nele na tela de Conversas
+- Novo: Trilha flutuante animada para travar áudio ao arrastar para cima, com resposta tátil e acompanhamento contínuo do dedo sem cortes
+- Novo: Detecção em tempo real da conexão com fila automática offline e reenvio imediato de mídias pendentes ao reconectar
+- Novo: 5 cores de destaque personalizáveis, mini-player persistente no topo da conversa e pré-escuta antes de enviar voz
+- Melhorado: Envio de texto, áudio e mídias sem bloqueios de rede (consultas com cache local primeiro e timeouts reduzidos)
+- Melhorado: Visual repaginado sem bordas excessivas, câmera limpa e editores enxutos de foto e Status
+- Corrigido: Pausa instantânea em áudios enviados e recebidos e transição suave do microfone ao gravar

@@ -406,13 +406,11 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                           showSelectedIcon: false,
                           style: SegmentedButton.styleFrom(
                             backgroundColor:
-                                Colors.black.withValues(alpha: 0.28),
+                                Colors.black.withValues(alpha: 0.24),
                             selectedBackgroundColor: AppColors.emerald,
                             selectedForegroundColor: Colors.white,
                             foregroundColor: Colors.white70,
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.22),
-                            ),
+                            side: BorderSide.none,
                             visualDensity: VisualDensity.compact,
                           ),
                           segments: const [
@@ -454,7 +452,7 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                 ),
               ),
 
-              // Barra rápida de tipografia e fundo no modo Texto
+              // Barra enxuta de tipografia e fundo no modo Texto
               if (_mode == 'text')
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
@@ -471,40 +469,11 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                         ),
                         const SizedBox(width: 8),
                         _StatusToolPill(
-                          icon: Icons.format_bold_rounded,
-                          label: 'Negrito',
-                          active: _isBold,
-                          onTap: () => setState(() => _isBold = !_isBold),
-                        ),
-                        const SizedBox(width: 8),
-                        _StatusToolPill(
-                          icon: Icons.format_italic_rounded,
-                          label: 'Itálico',
-                          active: _isItalic,
-                          onTap: () => setState(() => _isItalic = !_isItalic),
-                        ),
-                        const SizedBox(width: 8),
-                        _StatusToolPill(
-                          icon: Icons.format_color_fill_rounded,
-                          label: 'Caixa',
-                          active: _withPill,
-                          onTap: () => setState(() => _withPill = !_withPill),
-                        ),
-                        const SizedBox(width: 8),
-                        _StatusToolPill(
                           icon: _alignments[_alignIndex].$3,
                           label: 'Alinhar',
                           onTap: () => setState(() {
                             _alignIndex =
                                 (_alignIndex + 1) % _alignments.length;
-                          }),
-                        ),
-                        const SizedBox(width: 8),
-                        _StatusToolPill(
-                          icon: Icons.format_size_rounded,
-                          label: '${_fontSizes[_sizeIndex].round()}',
-                          onTap: () => setState(() {
-                            _sizeIndex = (_sizeIndex + 1) % _fontSizes.length;
                           }),
                         ),
                         const SizedBox(width: 8),
@@ -524,7 +493,7 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                               : Icons.photo_library_rounded,
                           label: _textBackgroundPhotoPath != null
                               ? 'Sem foto'
-                              : 'Foto de fundo',
+                              : 'Fundo',
                           onTap: () {
                             if (_textBackgroundPhotoPath != null) {
                               setState(() => _textBackgroundPhotoPath = null);
@@ -578,9 +547,10 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                             }
                           });
                         },
-                        child: Container(
-                          width: 34,
-                          height: 34,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
+                          width: selected ? 36 : 30,
+                          height: selected ? 36 : 30,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: LinearGradient(
@@ -588,22 +558,23 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                               end: Alignment.bottomRight,
                               colors: [c1, c2],
                             ),
-                            border: Border.all(
-                              color: selected
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.45),
-                              width: selected ? 3 : 1.5,
-                            ),
                             boxShadow: selected
                                 ? [
                                     BoxShadow(
                                       color:
-                                          Colors.black.withValues(alpha: 0.3),
-                                      blurRadius: 6,
+                                          Colors.white.withValues(alpha: 0.7),
+                                      spreadRadius: 2,
                                     ),
                                   ]
                                 : null,
                           ),
+                          child: selected
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
+                              : null,
                         ),
                       );
                     },
@@ -674,11 +645,8 @@ class _CreateStatusScreenState extends ConsumerState<CreateStatusScreen> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.42),
+                              color: Colors.black.withValues(alpha: 0.36),
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.22),
-                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -1097,13 +1065,8 @@ class _StatusToolPill extends StatelessWidget {
         decoration: BoxDecoration(
           color: active
               ? AppColors.emerald.withValues(alpha: 0.85)
-              : Colors.black.withValues(alpha: 0.34),
+              : Colors.black.withValues(alpha: 0.28),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: active
-                ? AppColors.emeraldBright
-                : Colors.white.withValues(alpha: 0.2),
-          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1115,7 +1078,6 @@ class _StatusToolPill extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: swatchColor,
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white70, width: 1.2),
                 ),
               )
             else

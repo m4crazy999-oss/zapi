@@ -24,7 +24,6 @@ enum _EditorTool {
   none,
   draw,
   crop,
-  filter,
 }
 
 class _EditablePhotoDoc {
@@ -38,8 +37,6 @@ class _EditablePhotoDoc {
   ui.Image baseImage;
   String caption;
 
-  PhotoFilterPreset filterPreset = PhotoFilterPreset.original;
-  double brightness = 0.0;
   bool hasGeometryEdit = false;
 
   final List<DrawStroke> strokes = [];
@@ -167,8 +164,6 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
           d.strokes.isNotEmpty ||
           d.textOverlays.isNotEmpty ||
           d.stickerOverlays.isNotEmpty ||
-          d.filterPreset != PhotoFilterPreset.original ||
-          d.brightness.abs() >= 0.01 ||
           d.hasGeometryEdit ||
           d.caption.trim().isNotEmpty,
     );
@@ -464,11 +459,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                               selected: fontKey == f.$1,
                               selectedColor: AppColors.emerald,
                               backgroundColor: AppColors.darkSurfaceAlt,
-                              side: BorderSide(
-                                color: fontKey == f.$1
-                                    ? AppColors.emeraldBright
-                                    : Colors.white24,
-                              ),
+                              side: BorderSide.none,
                               showCheckmark: false,
                               onSelected: (_) =>
                                   setModalState(() => fontKey = f.$1),
@@ -489,18 +480,23 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                         final selected = c == pickedColor;
                         return GestureDetector(
                           onTap: () => setModalState(() => pickedColor = c),
-                          child: Container(
-                            width: 32,
-                            height: 32,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 140),
+                            width: selected ? 34 : 30,
+                            height: selected ? 34 : 30,
                             decoration: BoxDecoration(
                               color: c,
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: selected
-                                    ? AppColors.emeraldBright
-                                    : Colors.white38,
-                                width: selected ? 3 : 1.5,
-                              ),
+                              boxShadow: selected
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.emeraldBright
+                                            .withValues(alpha: 0.75),
+                                        blurRadius: 0,
+                                        spreadRadius: 2.5,
+                                      ),
+                                    ]
+                                  : null,
                             ),
                           ),
                         );
@@ -641,19 +637,11 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    // 1. Imagem base com filtro e brilho aplicados
-    final activeFilter = PhotoFilterPreset.buildColorFilter(
-      doc.filterPreset,
-      doc.brightness,
-    );
-    final basePaint = Paint()..filterQuality = FilterQuality.high;
-    if (activeFilter != null) {
-      basePaint.colorFilter = activeFilter;
-    }
+    // 1. Imagem base
     canvas.drawImage(
       src,
       Offset.zero,
-      basePaint,
+      Paint()..filterQuality = FilterQuality.high,
     );
 
     // 2. Traços de desenho livre
@@ -786,16 +774,7 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
     final imgAspect = img.width / img.height;
 
     final primaryButtonLabel = widget.sendButtonLabel ??
-        (_docs.length > 1
-            ? 'Enviar ${_docs.length} fotos'
-            : (widget.recipientName != null
-                ? 'Enviar para ${widget.recipientName}'
-                : 'Enviar foto'));
-
-    final activeFilter = PhotoFilterPreset.buildColorFilter(
-      doc.filterPreset,
-      doc.brightness,
-    );
+        (_docs.length > 1 ? 'Enviar ${_docs.length}' : 'Enviar');
 
     return PopScope(
       canPop: !_hasUnsavedChanges || _exporting,
@@ -855,16 +834,6 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                     ),
                   ],
                   _EditorToolButton(
-                    icon: Icons.tune_rounded,
-                    tooltip: 'Filtros e brilho',
-                    active: _tool == _EditorTool.filter,
-                    onTap: () => setState(() {
-                      _tool = _tool == _EditorTool.filter
-                          ? _EditorTool.none
-                          : _EditorTool.filter;
-                    }),
-                  ),
-                  _EditorToolButton(
                     icon: Icons.crop_rotate_rounded,
                     tooltip: 'Recortar e girar',
                     active: _tool == _EditorTool.crop,
@@ -908,84 +877,6 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                 ],
               ),
             ),
-
-            // Controles contextuais do modo Filtros e Brilho
-            if (_tool == _EditorTool.filter)
-              Container(
-                padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      height: 36,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: PhotoFilterPreset.values.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (_, idx) {
-                          final preset = PhotoFilterPreset.values[idx];
-                          final selected = doc.filterPreset == preset;
-                          return ChoiceChip(
-                            label: Text(
-                              preset.label,
-                              style: TextStyle(
-                                color: selected ? Colors.white : Colors.white70,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            selected: selected,
-                            selectedColor: AppColors.emerald,
-                            backgroundColor: AppColors.darkSurfaceAlt,
-                            side: BorderSide(
-                              color: selected
-                                  ? AppColors.emeraldBright
-                                  : Colors.white24,
-                            ),
-                            showCheckmark: false,
-                            visualDensity: VisualDensity.compact,
-                            onSelected: (_) =>
-                                setState(() => doc.filterPreset = preset),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.brightness_6_rounded,
-                          color: Colors.white70,
-                          size: 18,
-                        ),
-                        Expanded(
-                          child: Slider(
-                            value: doc.brightness,
-                            min: -0.35,
-                            max: 0.35,
-                            divisions: 28,
-                            activeColor: AppColors.emeraldBright,
-                            inactiveColor: Colors.white24,
-                            onChanged: (v) =>
-                                setState(() => doc.brightness = v),
-                          ),
-                        ),
-                        if (doc.brightness.abs() >= 0.01)
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => doc.brightness = 0.0),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white70,
-                              minimumSize: const Size(44, 32),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                            ),
-                            child: const Text('Zerar'),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
 
             // Controles contextuais do modo Desenhar
             if (_tool == _EditorTool.draw)
@@ -1032,18 +923,22 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                             final selected = c == _drawColor;
                             return GestureDetector(
                               onTap: () => setState(() => _drawColor = c),
-                              child: Container(
-                                width: 26,
-                                height: 26,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 140),
+                                width: selected ? 28 : 24,
+                                height: selected ? 28 : 24,
                                 decoration: BoxDecoration(
                                   color: c,
                                   shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: selected
-                                        ? AppColors.emeraldBright
-                                        : Colors.white54,
-                                    width: selected ? 3 : 1.5,
-                                  ),
+                                  boxShadow: selected
+                                      ? [
+                                          BoxShadow(
+                                            color: AppColors.emeraldBright
+                                                .withValues(alpha: 0.8),
+                                            spreadRadius: 2.2,
+                                          ),
+                                        ]
+                                      : null,
                                 ),
                               ),
                             );
@@ -1125,18 +1020,10 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                         clipBehavior: Clip.none,
                         children: [
                           Positioned.fill(
-                            child: activeFilter != null
-                                ? ColorFiltered(
-                                    colorFilter: activeFilter,
-                                    child: RawImage(
-                                      image: img,
-                                      fit: BoxFit.fill,
-                                    ),
-                                  )
-                                : RawImage(
-                                    image: img,
-                                    fit: BoxFit.fill,
-                                  ),
+                            child: RawImage(
+                              image: img,
+                              fit: BoxFit.fill,
+                            ),
                           ),
                           // Camada de desenho livre
                           Positioned.fill(
@@ -1413,20 +1300,19 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                     final selected = index == _activeIndex;
                     return GestureDetector(
                       onTap: () => _switchPhoto(index),
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 140),
                         width: 50,
                         height: 50,
+                        padding: EdgeInsets.all(selected ? 2 : 0),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: selected
-                                ? AppColors.emeraldBright
-                                : Colors.white24,
-                            width: selected ? 2.5 : 1,
-                          ),
+                          borderRadius: BorderRadius.circular(11),
+                          color: selected
+                              ? AppColors.emeraldBright
+                              : Colors.transparent,
                         ),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(selected ? 9 : 11),
                           child: RawImage(
                             image: _docs[index].baseImage,
                             fit: BoxFit.cover,
@@ -1438,74 +1324,76 @@ class _ZapiPhotoEditorScreenState extends ConsumerState<ZapiPhotoEditorScreen> {
                 ),
               ),
 
-            // Legenda + botão grande de enviar no rodapé
-            Container(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              color: Colors.black.withValues(alpha: 0.72),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+            // Barra inferior compacta: legenda + botão de envio direto
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  TextField(
-                    controller: _captionController,
-                    maxLength: AppConstants.maxMessageLength,
-                    minLines: 1,
-                    maxLines: 3,
-                    onChanged: (v) => _currentDoc.caption = v,
-                    textCapitalization: TextCapitalization.sentences,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      counterText: '',
-                      hintText: widget.captionHint,
-                      hintStyle: const TextStyle(color: Colors.white60),
-                      filled: true,
-                      fillColor: AppColors.darkSurfaceAlt,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        borderSide: BorderSide.none,
+                  Expanded(
+                    child: TextField(
+                      controller: _captionController,
+                      maxLength: AppConstants.maxMessageLength,
+                      minLines: 1,
+                      maxLines: 3,
+                      onChanged: (v) => _currentDoc.caption = v,
+                      textCapitalization: TextCapitalization.sentences,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        hintText: widget.captionHint,
+                        hintStyle: const TextStyle(color: Colors.white54),
+                        filled: true,
+                        fillColor: AppColors.darkSurfaceAlt,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: FilledButton.icon(
-                      onPressed: _exporting ? null : _exportAndReturn,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.emerald,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: _exporting ? null : _exportAndReturn,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.emerald,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(52, 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
                       ),
-                      icon: _exporting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.3,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.send_rounded),
-                      label: Text(
-                        _exporting ? 'Preparando...' : primaryButtonLabel,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    icon: _exporting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded, size: 19),
+                    label: Text(
+                      _exporting ? 'Enviando' : primaryButtonLabel,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -1585,9 +1473,7 @@ class _CropChip extends StatelessWidget {
         selected: selected,
         selectedColor: AppColors.emerald,
         backgroundColor: AppColors.darkSurfaceAlt,
-        side: BorderSide(
-          color: selected ? AppColors.emeraldBright : Colors.white24,
-        ),
+        side: BorderSide.none,
         showCheckmark: false,
         onSelected: (_) => onTap(),
         visualDensity: VisualDensity.compact,
@@ -1841,7 +1727,7 @@ class _EditorStickerSheetState extends State<_EditorStickerSheet> {
                       foregroundColor: Colors.white70,
                       selectedBackgroundColor: AppColors.emerald,
                       selectedForegroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white24),
+                      side: BorderSide.none,
                     ),
                     segments: const [
                       ButtonSegment(

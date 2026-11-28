@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/validators.dart';
-import '../../../../core/widgets/zapi_logo.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../providers/auth_providers.dart';
 
@@ -87,16 +87,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Center(child: ZapiLogo(size: 56)),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Configure seu perfil inicial no Zapi.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: secondaryText,
-                          ),
+                    const Center(
+                      child: ZapiMascotWithBubble(
+                        mood: ZapiMascotMood.happy,
+                        mascotSize: 84,
+                        message:
+                            'Que bom ter você por aqui! Vamos criar sua conta no Zapi.',
+                      ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     if (_errorMessage != null) ...[
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -106,12 +105,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                               .error
                               .withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .error
-                                .withValues(alpha: 0.35),
-                          ),
                         ),
                         child: Text(
                           _errorMessage!,

@@ -33,14 +33,7 @@ class ChatAudioMiniBar extends ConsumerWidget {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
-        ),
-      ),
+      color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurface,
       child: Row(
         children: [
           IconButton(

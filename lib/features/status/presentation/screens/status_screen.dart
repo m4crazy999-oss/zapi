@@ -231,7 +231,7 @@ class StatusScreen extends ConsumerWidget {
               uid: profile?.uid ?? '',
             ),
           ),
-          const Divider(height: 1),
+          const SizedBox(height: 8),
           groupsAsync.when(
             loading: () => const Padding(
               padding: EdgeInsets.only(top: 12),
@@ -239,10 +239,12 @@ class StatusScreen extends ConsumerWidget {
             ),
             error: (_, __) => Padding(
               padding: const EdgeInsets.all(24),
-              child: Text(
-                'Não foi possível carregar os status agora.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: secondaryText),
+              child: Center(
+                child: ZapiMascotWithBubble(
+                  mood: ZapiMascotMood.waiting,
+                  mascotSize: 90,
+                  message: 'Ops! Não consegui carregar os status agora.',
+                ),
               ),
             ),
             data: (groups) {
@@ -250,34 +252,15 @@ class StatusScreen extends ConsumerWidget {
                 return Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
-                    vertical: 56,
+                    vertical: 48,
                   ),
-                  child: Column(
-                    children: [
-                      const ZapiMascot(
-                        mood: ZapiMascotMood.resting,
-                        size: 104,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Nenhuma atualização por aqui',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Quando seus contatos publicarem um status, ele aparece aqui por 24 horas.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          color: secondaryText,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
+                  child: Center(
+                    child: ZapiMascotWithBubble(
+                      mood: ZapiMascotMood.resting,
+                      mascotSize: 102,
+                      message:
+                          'Tudo tranquilo! Quando seus contatos postarem um status, ele aparece aqui por 24h.',
+                    ),
                   ),
                 );
               }

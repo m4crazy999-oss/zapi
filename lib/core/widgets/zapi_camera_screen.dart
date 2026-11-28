@@ -726,14 +726,6 @@ class _ZapiCameraScreenState extends State<ZapiCameraScreen>
                         tooltip: 'Alternar flash',
                         onTap: _cycleFlash,
                       ),
-                    if (_cameras.length > 1) ...[
-                      const SizedBox(width: 10),
-                      _CircleGlassButton(
-                        icon: Icons.cameraswitch_rounded,
-                        tooltip: 'Trocar câmera',
-                        onTap: _switchCamera,
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -830,54 +822,13 @@ class _ZapiCameraScreenState extends State<ZapiCameraScreen>
                               : ListView.separated(
                                   scrollDirection: Axis.horizontal,
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
+                                    horizontal: 14,
                                   ),
-                                  itemCount: _recentAssets.length + 1,
+                                  itemCount: _recentAssets.length,
                                   separatorBuilder: (_, __) =>
-                                      const SizedBox(width: 6),
+                                      const SizedBox(width: 8),
                                   itemBuilder: (context, index) {
-                                    if (index == 0) {
-                                      return InkWell(
-                                        borderRadius: BorderRadius.circular(10),
-                                        onTap: _openFullGallery,
-                                        child: Container(
-                                          width: 68,
-                                          height: 72,
-                                          decoration: BoxDecoration(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.14),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            border: Border.all(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.24),
-                                            ),
-                                          ),
-                                          child: const Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(
-                                                Icons.photo_library_rounded,
-                                                color: Colors.white,
-                                                size: 22,
-                                              ),
-                                              SizedBox(height: 4),
-                                              Text(
-                                                'Galeria',
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    }
-
-                                    final asset = _recentAssets[index - 1];
+                                    final asset = _recentAssets[index];
                                     final selectedOrder = _selectedAssets
                                         .indexWhere((a) => a.id == asset.id);
                                     final isSelected = selectedOrder >= 0;
@@ -896,77 +847,78 @@ class _ZapiCameraScreenState extends State<ZapiCameraScreen>
                                 ),
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
-                    // Controles inferiores: Galeria completa, Obturador, Dica
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _CircleGlassButton(
-                          icon: Icons.photo_library_rounded,
-                          tooltip: 'Abrir galeria completa',
-                          onTap: _openFullGallery,
-                        ),
-                        GestureDetector(
-                          onTap: cameraReady ? _capturePhoto : null,
-                          onLongPressStart: cameraReady && widget.allowVideo
-                              ? (_) => _startVideoRecording()
-                              : null,
-                          onLongPressEnd: widget.allowVideo
-                              ? (_) =>
-                                  _stopVideoRecording(sendImmediately: true)
-                              : null,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 160),
-                            width: _isRecordingVideo ? 84 : 74,
-                            height: _isRecordingVideo ? 84 : 74,
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _isRecordingVideo
-                                    ? const Color(0xFFEF4444)
-                                    : Colors.white,
-                                width: 4,
-                              ),
-                            ),
+                    // Controles inferiores: Galeria completa, Obturador, Trocar lente
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _CircleGlassButton(
+                            icon: Icons.photo_library_rounded,
+                            tooltip: 'Abrir galeria completa',
+                            onTap: _openFullGallery,
+                          ),
+                          GestureDetector(
+                            onTap: cameraReady ? _capturePhoto : null,
+                            onLongPressStart: cameraReady && widget.allowVideo
+                                ? (_) => _startVideoRecording()
+                                : null,
+                            onLongPressEnd: widget.allowVideo
+                                ? (_) =>
+                                    _stopVideoRecording(sendImmediately: true)
+                                : null,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 160),
+                              width: _isRecordingVideo ? 82 : 74,
+                              height: _isRecordingVideo ? 82 : 74,
+                              padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
+                                shape: BoxShape.circle,
                                 color: _isRecordingVideo
                                     ? const Color(0xFFEF4444)
-                                    : Colors.white.withValues(
-                                        alpha: cameraReady ? 0.94 : 0.35,
-                                      ),
-                                shape: _isRecordingVideo
-                                    ? BoxShape.rectangle
-                                    : BoxShape.circle,
-                                borderRadius: _isRecordingVideo
-                                    ? BorderRadius.circular(14)
-                                    : null,
+                                        .withValues(alpha: 0.25)
+                                    : Colors.white.withValues(alpha: 0.22),
+                              ),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 160),
+                                decoration: BoxDecoration(
+                                  color: _isRecordingVideo
+                                      ? const Color(0xFFEF4444)
+                                      : Colors.white.withValues(
+                                          alpha: cameraReady ? 0.96 : 0.35,
+                                        ),
+                                  shape: _isRecordingVideo
+                                      ? BoxShape.rectangle
+                                      : BoxShape.circle,
+                                  borderRadius: _isRecordingVideo
+                                      ? BorderRadius.circular(14)
+                                      : null,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        SizedBox(
-                          width: 44,
-                          child: _cameras.length > 1
-                              ? _CircleGlassButton(
-                                  icon: Icons.flip_camera_android_rounded,
-                                  tooltip: 'Virar câmera',
-                                  onTap: _switchCamera,
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                      ],
+                          SizedBox(
+                            width: 46,
+                            child: _cameras.length > 1
+                                ? _CircleGlassButton(
+                                    icon: Icons.cameraswitch_rounded,
+                                    tooltip: 'Trocar câmera',
+                                    onTap: _switchCamera,
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Text(
                       widget.allowVideo
                           ? 'Toque para foto · Segure para vídeo'
                           : 'Toque para fotografar',
-                      style: const TextStyle(
-                        color: Colors.white70,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -1001,12 +953,11 @@ class _CircleGlassButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(24),
         child: Container(
-          width: 44,
-          height: 44,
+          width: 46,
+          height: 46,
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.48),
+            color: Colors.black.withValues(alpha: 0.44),
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
           ),
           child: Icon(icon, color: Colors.white, size: 22),
         ),
@@ -1031,20 +982,17 @@ class _GalleryStripTile extends StatelessWidget {
     final isVideo = asset.type == AssetType.video;
     final isSelected = selectedOrder != null;
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
       width: 68,
       height: 72,
+      padding: EdgeInsets.all(isSelected ? 2 : 0),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isSelected
-              ? AppColors.emeraldBright
-              : Colors.white.withValues(alpha: 0.18),
-          width: isSelected ? 2.5 : 1,
-        ),
+        borderRadius: BorderRadius.circular(12),
+        color: isSelected ? AppColors.emeraldBright : Colors.transparent,
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(isSelected ? 10 : 12),
         child: Stack(
           fit: StackFit.expand,
           children: [

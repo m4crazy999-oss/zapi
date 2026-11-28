@@ -78,42 +78,49 @@ class _AudioBubbleContentState extends ConsumerState<AudioBubbleContent> {
     if (message.chatId.isNotEmpty &&
         message.mediaId != null &&
         message.mediaId!.isNotEmpty) {
+      final playback = ref.read(audioPlaybackProvider);
+      if (playback.activeMessageId == message.id && playback.isPlaying) {
+        await ref.read(audioPlaybackProvider.notifier).pause();
+        return;
+      }
       setState(() => _fetchingAudio = true);
+      File? cached;
       try {
-        final cached =
-            await ref.read(mediaCacheServiceProvider).getOrFetchChatMedia(
-                  chatId: message.chatId,
-                  mediaId: message.mediaId!,
-                  mimeType: message.mimeType ?? 'audio/mp4',
-                );
-        if (!mounted) return;
-        if (cached == null || !await cached.exists()) {
-          ZapiToast.showError(
-            context,
-            'Áudio indisponível ou apagado.',
-            bottomOffset: 80,
-          );
-          return;
-        }
-        await ref.read(audioPlaybackProvider.notifier).togglePlay(
-              messageId: message.id,
-              urlOrPath: cached.path,
-              isLocalFile: true,
+        cached = await ref.read(mediaCacheServiceProvider).getOrFetchChatMedia(
               chatId: message.chatId,
-              senderName: label,
-              fallbackDuration: totalDuration,
-              onStarted: widget.onAudioStarted,
+              mediaId: message.mediaId!,
+              mimeType: message.mimeType ?? 'audio/mp4',
             );
       } catch (_) {
-        if (!mounted) return;
+        if (mounted) {
+          setState(() => _fetchingAudio = false);
+          ZapiToast.showError(
+            context,
+            'Não foi possível baixar este áudio.',
+            bottomOffset: 80,
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _fetchingAudio = false);
+      if (cached == null || !await cached.exists()) {
         ZapiToast.showError(
           context,
-          'Não foi possível baixar este áudio.',
+          'Áudio indisponível ou apagado.',
           bottomOffset: 80,
         );
-      } finally {
-        if (mounted) setState(() => _fetchingAudio = false);
+        return;
       }
+      await ref.read(audioPlaybackProvider.notifier).togglePlay(
+            messageId: message.id,
+            urlOrPath: cached.path,
+            isLocalFile: true,
+            chatId: message.chatId,
+            senderName: label,
+            fallbackDuration: totalDuration,
+            onStarted: widget.onAudioStarted,
+          );
       return;
     }
 

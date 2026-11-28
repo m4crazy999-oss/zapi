@@ -33,6 +33,7 @@ class VoiceRecorderController {
   static const _uuid = Uuid();
   static const int _barCount = 18;
 
+  bool isHoldingMic = false;
   bool isRecording = false;
   bool isPaused = false;
   bool isLocked = false;
@@ -64,6 +65,10 @@ class VoiceRecorderController {
   StreamSubscription<PlayerState>? _previewStateSub;
 
   bool get isActive => isRecording || isPreviewing;
+  double get lockProgress =>
+      isRecording && !isLocked ? (-dragDy / 72.0).clamp(0.0, 1.0) : 0.0;
+  double get cancelProgress =>
+      isRecording && !isLocked ? (-dragDx / 95.0).clamp(0.0, 1.0) : 0.0;
 
   Future<void> handlePointerDown(
     BuildContext context,
@@ -72,6 +77,10 @@ class VoiceRecorderController {
     if (isRecording || isPreviewing || _starting) return;
     _starting = true;
     _pointerReleasedDuringStart = false;
+    _pointerStart = event.position;
+    isHoldingMic = true;
+    unawaited(HapticFeedback.selectionClick());
+    onStateChanged();
 
     try {
       final pendingStop = _stopInFlight;
@@ -117,7 +126,6 @@ class VoiceRecorderController {
       }
 
       _currentPath = filePath;
-      _pointerStart = event.position;
       _startedAt = DateTime.now();
       _accumulatedBeforePause = Duration.zero;
       isRecording = true;
@@ -140,6 +148,8 @@ class VoiceRecorderController {
       await cancelRecording();
     } finally {
       _starting = false;
+      isHoldingMic = false;
+      onStateChanged();
     }
   }
 
@@ -177,26 +187,40 @@ class VoiceRecorderController {
     final dx = event.position.dx - _pointerStart!.dx;
     final dy = event.position.dy - _pointerStart!.dy;
 
-    dragDx = dx.clamp(-140.0, 0.0);
-    dragDy = dy.clamp(-110.0, 0.0);
-    isCanceling = dx < -95;
+    final nextDx = dx < 0 && dy > -36 ? dx.clamp(-140.0, 0.0) : 0.0;
+    final nextDy = dy < 0 && dx > -42 ? dy.clamp(-110.0, 0.0) : 0.0;
+    dragDx = nextDx;
+    dragDy = nextDy;
 
-    if (dy < -72) {
+    final nextCanceling = nextDx < -95;
+    if (nextCanceling != isCanceling) {
+      isCanceling = nextCanceling;
+      if (isCanceling) {
+        unawaited(HapticFeedback.mediumImpact());
+      }
+    }
+
+    if (nextDy < -68) {
       isLocked = true;
       isCanceling = false;
       dragDx = 0;
       dragDy = 0;
-      HapticFeedback.lightImpact();
+      unawaited(HapticFeedback.mediumImpact());
     }
     onStateChanged();
   }
 
   Future<void> handlePointerUpOrCancel() async {
+    isHoldingMic = false;
     if (_starting && !isRecording) {
       _pointerReleasedDuringStart = true;
+      onStateChanged();
       return;
     }
-    if (!isRecording || isLocked) return;
+    if (!isRecording || isLocked) {
+      onStateChanged();
+      return;
+    }
 
     if (isCanceling) {
       await cancelRecording();
@@ -299,7 +323,7 @@ class VoiceRecorderController {
 
     try {
       final player = _previewPlayer;
-      if (player != null && player.playing) {
+      if (player != null && (player.playing || isPreviewPlaying)) {
         await player.pause();
         isPreviewPlaying = false;
         onStateChanged();
@@ -356,7 +380,13 @@ class VoiceRecorderController {
       isPreviewPlaying = true;
       onStateChanged();
       await _previewPlayer!.setVolume(1.0);
-      await _previewPlayer!.play();
+      unawaited(
+        _previewPlayer!.play().catchError((_) {
+          isPreviewPlaying = false;
+          onStateChanged();
+          onFeedbackMessage('Não foi possível reproduzir a prévia.');
+        }),
+      );
     } catch (_) {
       isPreviewPlaying = false;
       onStateChanged();
@@ -545,6 +575,7 @@ class VoiceRecorderController {
   }
 
   void _resetState() {
+    isHoldingMic = false;
     isRecording = false;
     isPaused = false;
     isLocked = false;
@@ -604,11 +635,8 @@ class VoiceRecordingBar extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(12, 6, 12, 10),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurface,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
         ),
         child: Row(
           children: [
@@ -699,11 +727,8 @@ class VoiceRecordingBar extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(12, 6, 12, 10),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+          color: isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurface,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          ),
         ),
         child: Row(
           children: [
@@ -797,138 +822,329 @@ class VoiceRecordingBar extends StatelessWidget {
       );
     }
 
+    final lockProgress = controller.lockProgress;
+    final cancelProgress = controller.cancelProgress;
+    final activePillBg = Color.lerp(
+      isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurface,
+      Theme.of(context).colorScheme.error.withValues(alpha: 0.16),
+      cancelProgress,
+    )!;
+    final micBg = Color.lerp(
+      primaryColor,
+      Theme.of(context).colorScheme.error,
+      cancelProgress,
+    )!;
+    final micOffset = Offset(
+      controller.dragDx * 0.35,
+      controller.dragDy * 0.72,
+    );
+    final lockTrackOpacity = (1.0 - cancelProgress * 1.6).clamp(0.0, 1.0);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-      child: Row(
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.centerRight,
         children: [
-          Expanded(
-            child: Container(
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: controller.isCanceling
-                      ? Theme.of(context).colorScheme.error
-                      : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const _PulsingMicDot(),
-                  const SizedBox(width: 8),
-                  Text(
-                    DateFormatter.formatDuration(controller.elapsed),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      fontFeatures: [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: controller.isCanceling
-                        ? Center(
-                            child: Text(
-                              'Solte para cancelar',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context).colorScheme.error,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          )
-                        : _LiveWaveform(amplitudes: controller.liveAmplitudes),
-                  ),
-                  if (!controller.isCanceling) ...[
-                    const SizedBox(width: 6),
-                    Transform.translate(
-                      offset: Offset(controller.dragDx * 0.25, 0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.chevron_left_rounded,
-                            size: 16,
-                            color: secondaryText,
-                          ),
-                          Text(
-                            'Cancelar',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: secondaryText,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            mainAxisSize: MainAxisSize.min,
+          Row(
             children: [
-              if (!controller.isCanceling)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? AppColors.darkSurfaceAlt
-                          : AppColors.lightSurface,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isDark
-                            ? AppColors.darkBorder
-                            : AppColors.lightBorder,
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.lock_rounded,
-                      size: 13,
-                      color: secondaryText,
-                    ),
-                  ),
-                ),
-              Transform.translate(
-                offset:
-                    Offset(controller.dragDx * 0.15, controller.dragDy * 0.35),
+              Expanded(
                 child: Container(
-                  width: 52,
-                  height: 52,
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
-                    color: controller.isCanceling
-                        ? Theme.of(context).colorScheme.error
-                        : primaryColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: primaryColor.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                        spreadRadius: 2,
+                    color: activePillBg,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Row(
+                    children: [
+                      const _PulsingMicDot(),
+                      const SizedBox(width: 8),
+                      Text(
+                        DateFormatter.formatDuration(controller.elapsed),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: controller.isCanceling
+                            ? Center(
+                                child: Text(
+                                  'Solte para cancelar',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              )
+                            : Opacity(
+                                opacity: (1.0 - cancelProgress * 0.45)
+                                    .clamp(0.25, 1.0),
+                                child: _LiveWaveform(
+                                  amplitudes: controller.liveAmplitudes,
+                                ),
+                              ),
+                      ),
+                      if (!controller.isCanceling) ...[
+                        const SizedBox(width: 6),
+                        Opacity(
+                          opacity:
+                              (1.0 - lockProgress * 1.4).clamp(0.0, 1.0),
+                          child: Transform.translate(
+                            offset: Offset(controller.dragDx * 0.42, 0),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.chevron_left_rounded,
+                                  size: 16,
+                                  color: secondaryText,
+                                ),
+                                Text(
+                                  'Deslize',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: secondaryText,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  child: Icon(
-                    controller.isCanceling
-                        ? Icons.delete_rounded
-                        : Icons.mic_rounded,
-                    color: Colors.white,
-                    size: 24,
+                ),
+              ),
+              const SizedBox(width: 64),
+            ],
+          ),
+          if (lockTrackOpacity > 0.02)
+            Positioned(
+              right: 5,
+              bottom: 66 + (lockProgress * 6),
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: lockTrackOpacity,
+                  child: _FloatingLockTrack(
+                    progress: lockProgress,
+                    isDark: isDark,
+                    accentColor: primaryColor,
+                    secondaryText: secondaryText,
                   ),
                 ),
               ),
-            ],
+            ),
+          Transform.translate(
+            offset: micOffset,
+            child: _PulsingMicButton(
+              color: micBg,
+              isCanceling: controller.isCanceling,
+              scale: controller.isCanceling
+                  ? 1.04
+                  : (1.10 + lockProgress * 0.08),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FloatingLockTrack extends StatefulWidget {
+  const _FloatingLockTrack({
+    required this.progress,
+    required this.isDark,
+    required this.accentColor,
+    required this.secondaryText,
+  });
+
+  final double progress;
+  final bool isDark;
+  final Color accentColor;
+  final Color secondaryText;
+
+  @override
+  State<_FloatingLockTrack> createState() => _FloatingLockTrackState();
+}
+
+class _FloatingLockTrackState extends State<_FloatingLockTrack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _chevronController;
+
+  @override
+  void initState() {
+    super.initState();
+    _chevronController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _chevronController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.progress.clamp(0.0, 1.0);
+    final bg = Color.lerp(
+      widget.isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurface,
+      widget.accentColor.withValues(alpha: widget.isDark ? 0.28 : 0.16),
+      p,
+    )!;
+    final iconColor = Color.lerp(widget.secondaryText, widget.accentColor, p)!;
+    final pillHeight = (80.0 - (p * 26.0)).clamp(52.0, 80.0);
+
+    return Container(
+      width: 44,
+      height: pillHeight,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: widget.isDark ? 0.26 : 0.10),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Transform.scale(
+            scale: 1.0 + p * 0.16,
+            child: Icon(
+              p > 0.68 ? Icons.lock_rounded : Icons.lock_open_rounded,
+              size: 18,
+              color: iconColor,
+            ),
+          ),
+          if (p < 0.7) ...[
+            const SizedBox(height: 6),
+            AnimatedBuilder(
+              animation: _chevronController,
+              builder: (context, child) {
+                final dy = -3.0 * _chevronController.value;
+                return Opacity(
+                  opacity: ((1.0 - p * 1.5) *
+                          (0.45 + 0.55 * _chevronController.value))
+                      .clamp(0.0, 1.0),
+                  child: Transform.translate(
+                    offset: Offset(0, dy),
+                    child: child,
+                  ),
+                );
+              },
+              child: Icon(
+                Icons.keyboard_arrow_up_rounded,
+                size: 18,
+                color: iconColor,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PulsingMicButton extends StatefulWidget {
+  const _PulsingMicButton({
+    required this.color,
+    required this.isCanceling,
+    required this.scale,
+  });
+
+  final Color color;
+  final bool isCanceling;
+  final double scale;
+
+  @override
+  State<_PulsingMicButton> createState() => _PulsingMicButtonState();
+}
+
+class _PulsingMicButtonState extends State<_PulsingMicButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _haloController;
+
+  @override
+  void initState() {
+    super.initState();
+    _haloController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 950),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _haloController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.scale(
+      scale: widget.scale,
+      child: SizedBox(
+        width: 58,
+        height: 58,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _haloController,
+              builder: (context, _) {
+                final t = Curves.easeInOut.transform(_haloController.value);
+                return Container(
+                  width: 50 + (t * 8),
+                  height: 50 + (t * 8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.color.withValues(alpha: 0.22 - (t * 0.12)),
+                  ),
+                );
+              },
+            ),
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: widget.color,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: 0.32),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 140),
+                child: Icon(
+                  widget.isCanceling
+                      ? Icons.delete_rounded
+                      : Icons.mic_rounded,
+                  key: ValueKey(widget.isCanceling),
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -985,21 +1201,57 @@ class _LiveWaveform extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 28,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: amplitudes.map((amp) {
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 60),
-            width: 3,
-            height: (24 * amp).clamp(3.0, 24.0),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          );
-        }).toList(),
+      width: double.infinity,
+      child: CustomPaint(
+        painter: _LiveWaveformPainter(
+          amplitudes: List<double>.of(amplitudes, growable: false),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
+  }
+}
+
+class _LiveWaveformPainter extends CustomPainter {
+  const _LiveWaveformPainter({
+    required this.amplitudes,
+    required this.color,
+  });
+
+  final List<double> amplitudes;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (amplitudes.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 3.0;
+
+    final count = amplitudes.length;
+    final step = size.width / count;
+    final centerY = size.height / 2;
+
+    for (var i = 0; i < count; i++) {
+      final amp = amplitudes[i].clamp(0.12, 1.0);
+      final h = (24.0 * amp).clamp(3.0, size.height);
+      final x = step * (i + 0.5);
+      canvas.drawLine(
+        Offset(x, centerY - h / 2),
+        Offset(x, centerY + h / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiveWaveformPainter oldDelegate) {
+    if (oldDelegate.color != color) return true;
+    if (oldDelegate.amplitudes.length != amplitudes.length) return true;
+    for (var i = 0; i < amplitudes.length; i++) {
+      if ((oldDelegate.amplitudes[i] - amplitudes[i]).abs() > 0.01) return true;
+    }
+    return false;
   }
 }

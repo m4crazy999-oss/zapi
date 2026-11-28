@@ -222,19 +222,20 @@ class MessageBubble extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: bubbleColor,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isMine ? 16 : 4),
-                      bottomRight: Radius.circular(isMine ? 4 : 16),
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isMine ? 18 : 5),
+                      bottomRight: Radius.circular(isMine ? 5 : 18),
                     ),
-                    border: isMine
+                    boxShadow: isDark
                         ? null
-                        : Border.all(
-                            color: isDark
-                                ? AppColors.darkBorder
-                                : AppColors.lightBorder,
-                            width: 0.8,
-                          ),
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 6,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,14 +469,9 @@ class _ReactionsStrip extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
               color: selected
-                  ? accentColor.withValues(alpha: isDark ? 0.28 : 0.16)
-                  : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
+                  ? accentColor.withValues(alpha: isDark ? 0.30 : 0.16)
+                  : (isDark ? AppColors.darkSurfaceAlt : AppColors.lightSurface),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: selected
-                    ? accentColor
-                    : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

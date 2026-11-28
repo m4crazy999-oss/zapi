@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../providers/auth_providers.dart';
 
@@ -89,10 +90,11 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                       children: [
                         const SizedBox(height: 12),
                         const Center(
-                          child: Icon(
-                            Icons.mark_email_read_rounded,
-                            size: 64,
-                            color: AppColors.emerald,
+                          child: ZapiMascotWithBubble(
+                            mood: ZapiMascotMood.happy,
+                            mascotSize: 92,
+                            message:
+                                'Prontinho! Confira sua caixa de entrada e também o spam.',
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -106,7 +108,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Se houver uma conta cadastrada com ${_emailController.text.trim()}, você receberá um link para redefinir sua senha.\n\nConfira também a caixa de Spam ou Lixo Eletrônico.',
+                          'Se houver uma conta cadastrada com ${_emailController.text.trim()}, você receberá um link para redefinir sua senha.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: secondaryText, height: 1.45),
                         ),
@@ -129,9 +131,13 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'Informe o e-mail cadastrado na sua conta para receber um link de redefinição de senha.',
-                            style: TextStyle(color: secondaryText, height: 1.45),
+                          const Center(
+                            child: ZapiMascotWithBubble(
+                              mood: ZapiMascotMood.waiting,
+                              mascotSize: 88,
+                              message:
+                                  'Esqueceu sua senha? Digite seu e-mail que eu envio o link!',
+                            ),
                           ),
                           const SizedBox(height: 20),
                           if (_errorMessage != null) ...[
@@ -143,12 +149,6 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                                     .error
                                     .withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .error
-                                      .withValues(alpha: 0.35),
-                                ),
                               ),
                               child: Text(
                                 _errorMessage!,

@@ -146,7 +146,8 @@ class MediaCacheService {
         .doc(chatId)
         .collection(AppConstants.mediaSubcollection)
         .doc(mediaId)
-        .get();
+        .get()
+        .timeout(const Duration(seconds: 12));
 
     if (!doc.exists) return null;
     final dataMap = doc.data();

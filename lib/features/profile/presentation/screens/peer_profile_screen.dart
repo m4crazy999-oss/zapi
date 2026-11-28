@@ -594,8 +594,6 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
                     ),
                     if (publicId.isNotEmpty) ...[
                       const SizedBox(height: 14),
-                      const Divider(height: 1),
-                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Icon(
@@ -667,41 +665,69 @@ class _PeerProfileScreenState extends ConsumerState<PeerProfileScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
-                      runSpacing: 6,
+                      runSpacing: 8,
                       children: [
-                        ActionChip(
-                          avatar: const Icon(Icons.photo_library_rounded, size: 16),
-                          label: Text('${sharedMedia.length} mídias'),
-                          onPressed: () => _openSharedMediaSheet(
-                            mediaItems: sharedMedia,
-                            fileItems: sharedFiles,
-                            linkItems: sharedLinks,
-                            initialTab: 0,
+                        for (final item in [
+                          (
+                            icon: Icons.photo_library_rounded,
+                            label: '${sharedMedia.length} mídias',
+                            tab: 0,
                           ),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.insert_drive_file_rounded, size: 16),
-                          label: Text('${sharedFiles.length} arquivos'),
-                          onPressed: () => _openSharedMediaSheet(
-                            mediaItems: sharedMedia,
-                            fileItems: sharedFiles,
-                            linkItems: sharedLinks,
-                            initialTab: 1,
+                          (
+                            icon: Icons.insert_drive_file_rounded,
+                            label: '${sharedFiles.length} arquivos',
+                            tab: 1,
                           ),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.link_rounded, size: 16),
-                          label: Text('${sharedLinks.length} links'),
-                          onPressed: () => _openSharedMediaSheet(
-                            mediaItems: sharedMedia,
-                            fileItems: sharedFiles,
-                            linkItems: sharedLinks,
-                            initialTab: 2,
+                          (
+                            icon: Icons.link_rounded,
+                            label: '${sharedLinks.length} links',
+                            tab: 2,
                           ),
-                        ),
+                        ])
+                          Material(
+                            color: isDark
+                                ? AppColors.darkSurfaceAlt
+                                : AppColors.lightSurfaceAlt,
+                            borderRadius: BorderRadius.circular(14),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => _openSharedMediaSheet(
+                                mediaItems: sharedMedia,
+                                fileItems: sharedFiles,
+                                linkItems: sharedLinks,
+                                initialTab: item.tab,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      item.icon,
+                                      size: 16,
+                                      color: isDark
+                                          ? AppColors.emeraldBright
+                                          : AppColors.emeraldDark,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      item.label,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                     if (sharedMedia.isNotEmpty) ...[

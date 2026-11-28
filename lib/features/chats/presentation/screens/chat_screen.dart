@@ -25,6 +25,7 @@ import '../../../../core/utils/zapi_toast.dart';
 import '../../../../core/widgets/chat_wallpaper.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
 import '../../../../core/widgets/zapi_camera_screen.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../../core/widgets/zapi_photo_editor_screen.dart';
 import '../../../../core/widgets/zapi_video_trimmer_screen.dart';
 import '../../../auth/domain/app_user.dart';
@@ -91,6 +92,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   final Set<String> _pendingHideMessageIds = {};
   final Map<String, Timer> _pendingHideTimers = {};
   final Map<String, GlobalKey> _messageKeys = {};
+  final List<DateTime> _recentSendTimes = [];
   late final NotificationService _notificationService;
   late final ChatsRepository _chatsRepository;
   late final ChatPreferencesNotifier _prefsNotifier;
@@ -347,6 +349,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _onTextChanged(nextText);
   }
 
+  bool _canSendWithoutSpam() {
+    final now = DateTime.now();
+    _recentSendTimes.removeWhere(
+      (t) => now.difference(t) > const Duration(seconds: 4),
+    );
+    if (_recentSendTimes.length >= 6) {
+      ZapiToast.showInfo(
+        context,
+        'Calma aí, aguarde um instante antes de enviar novamente.',
+        bottomOffset: 80,
+      );
+      return false;
+    }
+    _recentSendTimes.add(now);
+    return true;
+  }
+
   Future<void> _sendMessage({
     required AppUser? currentUser,
     required AppUser? peerUser,
@@ -355,6 +374,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final text = _textController.text.trim();
     final effectiveSender = _resolveCurrentUser(currentUser);
     if (text.isEmpty || _isSending || effectiveSender == null) return;
+    if (!_canSendWithoutSpam()) return;
 
     final effectivePeer = _resolveEffectivePeer(peerUser, thread);
     final quote = _replyingTo;
@@ -426,6 +446,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ),
       );
       if (edited == null || edited.isEmpty || !mounted) return;
+      if (!_canSendWithoutSpam()) return;
 
       final quote = _replyingTo;
       setState(() {
@@ -439,6 +460,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             recipient: effectivePeer,
             photos: edited,
             replyTo: quote,
+            chatExists: thread != null,
           );
       _scrollToBottom();
       return;
@@ -457,6 +479,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ),
       );
       if (trimmed == null || !mounted) return;
+      if (!_canSendWithoutSpam()) return;
 
       final quote = _replyingTo;
       setState(() {
@@ -474,6 +497,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               sizeBytes: trimmed.sizeBytes,
               caption: trimmed.caption,
               replyTo: quote,
+              chatExists: thread != null,
             );
         _scrollToBottom();
       } on AppException catch (e) {
@@ -497,6 +521,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         maxBytes: AppConstants.maxChatFileBytes,
       );
       if (picked == null || !mounted) return;
+      if (!_canSendWithoutSpam()) return;
 
       final effectivePeer = _resolveEffectivePeer(peerUser, thread);
       final quote = _replyingTo;
@@ -514,6 +539,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             mimeType: picked.mimeType,
             sizeBytes: picked.sizeBytes,
             replyTo: quote,
+            chatExists: thread != null,
           );
       _scrollToBottom();
     } on AppException catch (e) {
@@ -530,6 +556,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _handleRecordedVoice(String filePath, int durationMs) async {
+    if (!_canSendWithoutSpam()) return;
     final currentUser =
         _resolveCurrentUser(ref.read(currentUserProfileProvider).value);
     if (currentUser == null) return;
@@ -550,6 +577,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             filePath: filePath,
             durationMs: durationMs,
             replyTo: quote,
+            chatExists: thread != null,
           );
       _scrollToBottom();
     } on AppException catch (e) {
@@ -1000,6 +1028,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             (thread?.isBlockedBy(_myUid) ?? false);
     final enterToSend =
         ref.watch(chatPreferencesProvider.select((s) => s.enterToSend));
+    final isServerConnected =
+        ref.watch(serverConnectionProvider).value ?? true;
 
     ref.listen<ChatPreferencesState>(
       chatPreferencesProvider,
@@ -1202,16 +1232,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color:
-                      isDark ? AppColors.darkSurface : AppColors.lightSurface,
-                  border: Border(
-                    bottom: BorderSide(
-                      color:
-                          isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                    ),
-                  ),
-                ),
+                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
                 child: Row(
                   children: [
                     Text(
@@ -1254,6 +1275,48 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                 ),
               ),
             ChatAudioMiniBar(chatId: widget.chatId),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              child: isServerConnected
+                  ? const SizedBox.shrink()
+                  : Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.8,
+                              color: Color(0xFFD97706),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Sem conexão — envios entram na fila automática',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? const Color(0xFFFBBF24)
+                                    : const Color(0xFFB45309),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
             Expanded(
               child: ChatWallpaperBackground(
                 preset: ref.watch(chatWallpaperProvider),
@@ -1265,10 +1328,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                     Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
-                        child: Text(
-                          'Não foi possível carregar as mensagens desta conversa.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: secondaryText),
+                        child: ZapiMascotWithBubble(
+                          mood: ZapiMascotMood.waiting,
+                          mascotSize: 92,
+                          message:
+                              'Ops! Não consegui carregar as mensagens agora. Verifique sua conexão.',
                         ),
                       ),
                     )
@@ -1284,32 +1348,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         return Center(
                           child: Padding(
                             padding: const EdgeInsets.all(32),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isDark
-                                        ? AppColors.darkSurface
-                                        : AppColors.lightSurface,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: isDark
-                                          ? AppColors.darkBorder
-                                          : AppColors.lightBorder,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Envie uma mensagem, foto, vídeo, arquivo ou figurinha para $peerName.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(color: secondaryText),
-                                  ),
-                                ),
-                              ],
+                            child: ZapiMascotWithBubble(
+                              mood: ZapiMascotMood.happy,
+                              mascotSize: 96,
+                              message:
+                                  'Oi! Mande um olá, áudio, foto ou figurinha para $peerName.',
                             ),
                           ),
                         );
@@ -1366,15 +1409,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                       vertical: 5,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: isDark
-                                          ? AppColors.darkSurface
-                                          : AppColors.lightSurface,
+                                      color: (isDark
+                                              ? AppColors.darkSurface
+                                              : AppColors.lightSurface)
+                                          .withValues(alpha: 0.9),
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: isDark
-                                            ? AppColors.darkBorder
-                                            : AppColors.lightBorder,
-                                      ),
                                     ),
                                     child: Text(
                                       DateFormatter.formatDaySeparator(
@@ -1513,190 +1552,239 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             else
               SafeArea(
                 top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_replyingTo != null)
-                      ReplyPreviewBar(
-                        quote: _replyingTo!,
-                        onCancel: () => setState(() => _replyingTo = null),
-                      ),
-                    if (_voiceController.isActive)
-                      VoiceRecordingBar(controller: _voiceController)
-                    else
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 8, 10, 10),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerMove: (e) {
+                    if (_voiceController.isRecording &&
+                        !_voiceController.isLocked) {
+                      _voiceController.handlePointerMove(e);
+                    }
+                  },
+                  onPointerUp: (_) =>
+                      _voiceController.handlePointerUpOrCancel(),
+                  onPointerCancel: (_) =>
+                      _voiceController.handlePointerUpOrCancel(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_replyingTo != null)
+                        ReplyPreviewBar(
+                          quote: _replyingTo!,
+                          onCancel: () => setState(() => _replyingTo = null),
+                        ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 190),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        layoutBuilder: (currentChild, previousChildren) => Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.bottomCenter,
                           children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _textController,
-                                focusNode: _focusNode,
-                                minLines: 1,
-                                maxLines: 5,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                textInputAction: enterToSend
-                                    ? TextInputAction.send
-                                    : TextInputAction.newline,
-                                onSubmitted: enterToSend
-                                    ? (_) => _sendMessage(
+                            ...previousChildren,
+                            if (currentChild != null) currentChild,
+                          ],
+                        ),
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: child,
+                        ),
+                        child: _voiceController.isActive
+                            ? VoiceRecordingBar(
+                                key: ValueKey(
+                                  _voiceController.isPreviewing
+                                      ? 'preview'
+                                      : (_voiceController.isLocked
+                                          ? 'locked'
+                                          : 'recording'),
+                                ),
+                                controller: _voiceController,
+                              )
+                            : Padding(
+                                key: const ValueKey('composer'),
+                                padding: const EdgeInsets.fromLTRB(8, 8, 10, 10),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _textController,
+                                        focusNode: _focusNode,
+                                        minLines: 1,
+                                        maxLines: 5,
+                                        textCapitalization:
+                                            TextCapitalization.sentences,
+                                        textInputAction: enterToSend
+                                            ? TextInputAction.send
+                                            : TextInputAction.newline,
+                                        onSubmitted: enterToSend
+                                            ? (_) => _sendMessage(
+                                                  currentUser: currentUser,
+                                                  peerUser: peerUser,
+                                                  thread: thread,
+                                                )
+                                            : null,
+                                        onTap: () {
+                                          if (_showStickerTray) {
+                                            setState(
+                                              () => _showStickerTray = false,
+                                            );
+                                          }
+                                        },
+                                        onChanged: _onTextChanged,
+                                        decoration: InputDecoration(
+                                          hintText: 'Mensagem',
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 12,
+                                          ),
+                                          prefixIcon: IconButton(
+                                            tooltip: _showStickerTray
+                                                ? 'Teclado'
+                                                : 'Emojis e figurinhas',
+                                            onPressed: () {
+                                              if (_showStickerTray) {
+                                                setState(
+                                                  () =>
+                                                      _showStickerTray = false,
+                                                );
+                                                _focusNode.requestFocus();
+                                              } else {
+                                                _focusNode.unfocus();
+                                                setState(
+                                                  () => _showStickerTray = true,
+                                                );
+                                              }
+                                            },
+                                            icon: Icon(
+                                              _showStickerTray
+                                                  ? Icons.keyboard_rounded
+                                                  : Icons
+                                                      .sentiment_satisfied_alt_rounded,
+                                              color: _showStickerTray
+                                                  ? AppColors.emerald
+                                                  : secondaryText,
+                                            ),
+                                          ),
+                                          suffixIcon: IconButton(
+                                            tooltip: 'Enviar arquivo',
+                                            onPressed: () => _pickAndSendFile(
+                                              currentUser: currentUser,
+                                              peerUser: peerUser,
+                                              thread: thread,
+                                            ),
+                                            icon: Icon(
+                                              Icons.attach_file_rounded,
+                                              color: secondaryText,
+                                            ),
+                                          ),
+                                          filled: true,
+                                          fillColor: isDark
+                                              ? AppColors.darkSurfaceAlt
+                                              : AppColors.lightSurface,
+                                          border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(24),
+                                            borderSide: BorderSide.none,
+                                          ),
+                                          enabledBorder: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(24),
+                                            borderSide: BorderSide.none,
+                                          ),
+                                          focusedBorder: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(24),
+                                            borderSide: BorderSide.none,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    SizedBox(
+                                      width: 44,
+                                      height: 48,
+                                      child: IconButton(
+                                        tooltip: 'Câmera e mídia',
+                                        onPressed: () => _openCameraAndMedia(
                                           currentUser: currentUser,
                                           peerUser: peerUser,
                                           thread: thread,
-                                        )
-                                    : null,
-                                onTap: () {
-                                  if (_showStickerTray) {
-                                    setState(() => _showStickerTray = false);
-                                  }
-                                },
-                                onChanged: _onTextChanged,
-                                decoration: InputDecoration(
-                                  hintText: 'Mensagem',
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 12,
-                                  ),
-                                  prefixIcon: IconButton(
-                                    tooltip: _showStickerTray
-                                        ? 'Teclado'
-                                        : 'Emojis e figurinhas',
-                                    onPressed: () {
-                                      if (_showStickerTray) {
-                                        setState(() => _showStickerTray = false);
-                                        _focusNode.requestFocus();
-                                      } else {
-                                        _focusNode.unfocus();
-                                        setState(() => _showStickerTray = true);
-                                      }
-                                    },
-                                    icon: Icon(
-                                      _showStickerTray
-                                          ? Icons.keyboard_rounded
-                                          : Icons.sentiment_satisfied_alt_rounded,
-                                      color: _showStickerTray
-                                          ? AppColors.emerald
-                                          : secondaryText,
+                                        ),
+                                        style: IconButton.styleFrom(
+                                          backgroundColor: isDark
+                                              ? AppColors.darkSurfaceAlt
+                                              : AppColors.lightSurface,
+                                          shape: const CircleBorder(),
+                                        ),
+                                        icon: Icon(
+                                          Icons.camera_alt_rounded,
+                                          color: secondaryText,
+                                          size: 21,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                  suffixIcon: IconButton(
-                                    tooltip: 'Enviar arquivo',
-                                    onPressed: () => _pickAndSendFile(
-                                      currentUser: currentUser,
-                                      peerUser: peerUser,
-                                      thread: thread,
-                                    ),
-                                    icon: Icon(
-                                      Icons.attach_file_rounded,
-                                      color: secondaryText,
-                                    ),
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                    borderSide: BorderSide(
-                                      color: isDark
-                                          ? AppColors.darkBorder
-                                          : AppColors.lightBorder,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                    borderSide: BorderSide(
-                                      color: isDark
-                                          ? AppColors.emeraldBright
-                                          : AppColors.emerald,
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            SizedBox(
-                              width: 44,
-                              height: 48,
-                              child: IconButton(
-                                tooltip: 'Câmera e mídia',
-                                onPressed: () => _openCameraAndMedia(
-                                  currentUser: currentUser,
-                                  peerUser: peerUser,
-                                  thread: thread,
-                                ),
-                                style: IconButton.styleFrom(
-                                  backgroundColor: isDark
-                                      ? AppColors.darkSurfaceAlt
-                                      : AppColors.lightSurface,
-                                  side: BorderSide(
-                                    color: isDark
-                                        ? AppColors.darkBorder
-                                        : AppColors.lightBorder,
-                                  ),
-                                  shape: const CircleBorder(),
-                                ),
-                                icon: Icon(
-                                  Icons.camera_alt_rounded,
-                                  color: secondaryText,
-                                  size: 21,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            if (_hasTextInput)
-                              SizedBox(
-                                width: 48,
-                                height: 48,
-                                child: FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    padding: EdgeInsets.zero,
-                                    shape: const CircleBorder(),
-                                    minimumSize: const Size(48, 48),
-                                  ),
-                                  onPressed: _isSending
-                                      ? null
-                                      : () => _sendMessage(
-                                            currentUser: currentUser,
-                                            peerUser: peerUser,
-                                            thread: thread,
+                                    const SizedBox(width: 6),
+                                    if (_hasTextInput)
+                                      SizedBox(
+                                        width: 48,
+                                        height: 48,
+                                        child: FilledButton(
+                                          style: FilledButton.styleFrom(
+                                            padding: EdgeInsets.zero,
+                                            shape: const CircleBorder(),
+                                            minimumSize: const Size(48, 48),
                                           ),
-                                  child:
-                                      const Icon(Icons.send_rounded, size: 21),
-                                ),
-                              )
-                            else
-                              Listener(
-                                onPointerDown: (e) => _voiceController
-                                    .handlePointerDown(context, e),
-                                onPointerMove: _voiceController.handlePointerMove,
-                                onPointerUp: (_) =>
-                                    _voiceController.handlePointerUpOrCancel(),
-                                onPointerCancel: (_) =>
-                                    _voiceController.handlePointerUpOrCancel(),
-                                child: Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.emerald,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.mic_rounded,
-                                    color: Colors.white,
-                                    size: 22,
-                                  ),
+                                          onPressed: _isSending
+                                              ? null
+                                              : () => _sendMessage(
+                                                    currentUser: currentUser,
+                                                    peerUser: peerUser,
+                                                    thread: thread,
+                                                  ),
+                                          child: const Icon(
+                                            Icons.send_rounded,
+                                            size: 21,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Listener(
+                                        onPointerDown: (e) => _voiceController
+                                            .handlePointerDown(context, e),
+                                        child: AnimatedScale(
+                                          scale: _voiceController.isHoldingMic
+                                              ? 1.15
+                                              : 1.0,
+                                          duration:
+                                              const Duration(milliseconds: 110),
+                                          curve: Curves.easeOutCubic,
+                                          child: Container(
+                                            width: 48,
+                                            height: 48,
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.mic_rounded,
+                                              color: Colors.white,
+                                              size: 22,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
-                          ],
-                        ),
                       ),
                     if (_showStickerTray && !_voiceController.isActive)
                       StickerTray(
                         onEmojiSelected: _insertEmoji,
                         onStickerSelected: (sticker) async {
+                          if (!_canSendWithoutSpam()) return;
                           final effectiveSender =
                               _resolveCurrentUser(currentUser);
                           if (effectiveSender == null) return;
@@ -1729,6 +1817,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         },
                       ),
                   ],
+                ),
                 ),
               ),
           ],

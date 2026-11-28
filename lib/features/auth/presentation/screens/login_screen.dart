@@ -78,9 +78,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Center(
-                      child: ZapiMascot(
+                      child: ZapiMascotWithBubble(
                         mood: ZapiMascotMood.happy,
-                        size: 98,
+                        mascotSize: 92,
+                        message: 'Bem-vindo de volta! Bom te ver no Zapi.',
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -117,12 +118,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               .error
                               .withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .error
-                                .withValues(alpha: 0.35),
-                          ),
                         ),
                         child: Text(
                           _errorMessage!,

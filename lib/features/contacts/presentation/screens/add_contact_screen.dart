@@ -7,6 +7,7 @@ import '../../../../core/utils/app_exceptions.dart';
 import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/utils/zapi_toast.dart';
 import '../../../../core/widgets/zapi_avatar.dart';
+import '../../../../core/widgets/zapi_mascot.dart';
 import '../../../../core/widgets/zapi_text_field.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
@@ -138,29 +139,24 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                         : const Icon(Icons.search_rounded),
                     label: Text(_searching ? 'Buscando...' : 'Buscar perfil'),
                   ),
+                  if (!_searching && found == null && _searchError == null) ...[
+                    const SizedBox(height: 36),
+                    const Center(
+                      child: ZapiMascotWithBubble(
+                        mood: ZapiMascotMood.waiting,
+                        mascotSize: 96,
+                        message:
+                            'Digite o código ZP- ou @usuário da pessoa para eu buscar aqui!',
+                      ),
+                    ),
+                  ],
                   if (_searchError != null) ...[
-                    const SizedBox(height: 20),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.info_rounded,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                _searchError!,
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                    const SizedBox(height: 28),
+                    Center(
+                      child: ZapiMascotWithBubble(
+                        mood: ZapiMascotMood.waiting,
+                        mascotSize: 88,
+                        message: _searchError!,
                       ),
                     ),
                   ],

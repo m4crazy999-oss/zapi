@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/services/media_cache_service.dart';
+import '../../../../core/services/presence_service.dart';
 import '../../../auth/domain/app_user.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/chats_repository.dart';
@@ -10,9 +11,11 @@ import '../../domain/chat_message.dart';
 import '../../domain/chat_thread.dart';
 
 final chatsRepositoryProvider = Provider<ChatsRepository>((ref) {
+  final presence = ref.watch(presenceServiceProvider);
   return ChatsRepository(
     firestore: ref.watch(firebaseFirestoreProvider),
     mediaCache: ref.watch(mediaCacheServiceProvider),
+    isConnected: () => presence.isServerConnected,
   );
 });
 

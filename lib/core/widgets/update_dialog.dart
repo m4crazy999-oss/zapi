@@ -8,7 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../services/app_update_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/app_exceptions.dart';
-import 'zapi_logo.dart';
+import 'zapi_mascot.dart';
 
 /// Tela inteira obrigatória exibida quando existe uma nova versão publicada.
 /// Bloqueia o uso do aplicativo até concluir a atualização.
@@ -180,10 +180,32 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
     final secondaryText =
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
     final surfaceColor = isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final notes = widget.update.notes;
     final history = widget.update.releaseHistory;
     final hasMultipleVersions = history.length > 1;
+
+    final ZapiMascotMood mascotMood;
+    final String mascotSpeech;
+    if (_errorMessage != null) {
+      mascotMood = ZapiMascotMood.waiting;
+      mascotSpeech =
+          'Ops! Eu, o Zapinho, percebi que a conexão engasgou. Toque abaixo para tentar de novo!';
+    } else if (_downloadedApkPath != null) {
+      mascotMood = ZapiMascotMood.happy;
+      mascotSpeech =
+          'Tudo baixado! Agora é só tocar em Instalar para abrir seu Zapi novo.';
+    } else if (_isDownloading) {
+      mascotMood = ZapiMascotMood.waiting;
+      mascotSpeech = 'Segura aí! Já estou baixando a atualização rapidinho...';
+    } else if (hasMultipleVersions) {
+      mascotMood = ZapiMascotMood.excited;
+      mascotSpeech =
+          'Oba! Eu sou o Zapinho e juntei ${history.length} atualizações fresquinhas para você!';
+    } else {
+      mascotMood = ZapiMascotMood.excited;
+      mascotSpeech =
+          'Oi! Eu sou o Zapinho e chegou uma versão novinha do Zapi com melhorias pra você!';
+    }
 
     return PopScope(
       canPop: false,
@@ -193,12 +215,18 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
             children: [
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Center(child: ZapiLogo(size: 72)),
-                      const SizedBox(height: 20),
+                      Center(
+                        child: ZapiMascotWithBubble(
+                          message: mascotSpeech,
+                          mood: mascotMood,
+                          mascotSize: 102,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       Center(
                         child: Container(
                           padding: const EdgeInsets.symmetric(
@@ -255,7 +283,6 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
                               decoration: BoxDecoration(
                                 color: surfaceColor,
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: borderColor),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,7 +339,6 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
                           decoration: BoxDecoration(
                             color: surfaceColor,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: borderColor),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

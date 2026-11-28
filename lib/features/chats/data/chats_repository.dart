@@ -15,11 +15,16 @@ class ChatsRepository {
   ChatsRepository({
     required FirebaseFirestore firestore,
     required MediaCacheService mediaCache,
+    bool Function()? isConnected,
   })  : _firestore = firestore,
-        _mediaCache = mediaCache;
+        _mediaCache = mediaCache,
+        _isConnected = isConnected;
 
   final FirebaseFirestore _firestore;
   final MediaCacheService _mediaCache;
+  final bool Function()? _isConnected;
+
+  bool get _hasConnection => _isConnected?.call() ?? true;
 
   CollectionReference<Map<String, dynamic>> get _chatsRef =>
       _firestore.collection(AppConstants.chatsCollection);
@@ -235,10 +240,12 @@ class ChatsRepository {
       if (cacheSnap.exists) return true;
     } catch (_) {}
 
+    if (!_hasConnection) return false;
+
     try {
       final snap = await chatRef
           .get(const GetOptions(source: Source.server))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(milliseconds: 1200));
       return snap.exists;
     } catch (_) {
       return false;
@@ -249,12 +256,22 @@ class ChatsRepository {
     if (recipient.username.isNotEmpty && recipient.about.isNotEmpty) {
       return recipient;
     }
+    final userRef =
+        _firestore.collection(AppConstants.usersCollection).doc(recipient.uid);
     try {
-      final snap = await _firestore
-          .collection(AppConstants.usersCollection)
-          .doc(recipient.uid)
-          .get()
-          .timeout(const Duration(seconds: 2));
+      final cacheSnap =
+          await userRef.get(const GetOptions(source: Source.cache));
+      if (cacheSnap.exists) {
+        return AppUser.fromFirestore(cacheSnap);
+      }
+    } catch (_) {}
+
+    if (!_hasConnection) return recipient;
+
+    try {
+      final snap = await userRef
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(milliseconds: 1200));
       if (snap.exists) {
         return AppUser.fromFirestore(snap);
       }
@@ -369,30 +386,56 @@ class ChatsRepository {
       return batch;
     }
 
-    try {
-      final commitFuture = buildBatch(actualChatExists).commit();
-      try {
-        await commitFuture.timeout(const Duration(seconds: 4));
-      } on TimeoutException {
-        // Rede lenta ou offline: gravação já está na fila local para sincronizar.
-        unawaited(commitFuture.catchError((_) {}));
-      }
-    } on FirebaseException catch (error) {
-      // Se houve corrida entre cache e servidor na criação da conversa, revalida e tenta uma vez.
+    Future<void> recoverIfRace(FirebaseException error) async {
       if (error.code == 'not-found' ||
           error.code == 'already-exists' ||
           error.code == 'permission-denied') {
-        try {
-          final serverSnap =
-              await chatRef.get(const GetOptions(source: Source.server));
-          if (serverSnap.exists != actualChatExists) {
-            await buildBatch(serverSnap.exists)
-                .commit()
-                .timeout(const Duration(seconds: 4));
-            return;
-          }
-        } catch (_) {}
+        final serverSnap = await chatRef
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 3));
+        if (serverSnap.exists != actualChatExists) {
+          await buildBatch(serverSnap.exists)
+              .commit()
+              .timeout(const Duration(seconds: 3));
+        }
       }
+    }
+
+    try {
+      final commitFuture = buildBatch(actualChatExists).commit();
+      if (!_hasConnection) {
+        // Sem conexão agora: gravação já entrou na fila local e sincroniza ao reconectar.
+        unawaited(
+          commitFuture.catchError((Object error) async {
+            if (error is FirebaseException) {
+              try {
+                await recoverIfRace(error);
+              } catch (_) {}
+            }
+          }),
+        );
+        return;
+      }
+
+      try {
+        await commitFuture.timeout(const Duration(milliseconds: 1200));
+      } on TimeoutException {
+        // Rede lenta: gravação já está na fila local; mantém sincronizando sem travar a UI.
+        unawaited(
+          commitFuture.catchError((Object error) async {
+            if (error is FirebaseException) {
+              try {
+                await recoverIfRace(error);
+              } catch (_) {}
+            }
+          }),
+        );
+      }
+    } on FirebaseException catch (error) {
+      try {
+        await recoverIfRace(error);
+        return;
+      } catch (_) {}
       throw FirebaseErrorMapper.map(error);
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
@@ -414,12 +457,12 @@ class ChatsRepository {
         'blockedUids': blocked
             ? FieldValue.arrayUnion([peerUid])
             : FieldValue.arrayRemove([peerUid]),
-      });
+      }).timeout(const Duration(seconds: 6));
 
       try {
         await _chatsRef.doc(chatId).update({
           'blockedBy.$currentUid': blocked,
-        });
+        }).timeout(const Duration(seconds: 4));
       } catch (_) {
         // A conversa pode ainda não existir no servidor.
       }
@@ -433,10 +476,11 @@ class ChatsRepository {
     required String uid,
     required bool isTyping,
   }) async {
+    if (!_hasConnection) return;
     try {
       await _chatsRef.doc(chatId).update({
         'typing.$uid': isTyping ? FieldValue.serverTimestamp() : null,
-      });
+      }).timeout(const Duration(seconds: 2));
     } catch (_) {
       // Conversa ainda não criada ou dispositivo offline.
     }
@@ -455,7 +499,7 @@ class ChatsRepository {
           .doc(messageId)
           .update({
         'playedBy': FieldValue.arrayUnion([currentUid]),
-      });
+      }).timeout(const Duration(seconds: 3));
     } catch (_) {}
   }
 
@@ -662,7 +706,7 @@ class ChatsRepository {
           .doc(messageId)
           .update({
         'reactions.$uid': remove ? FieldValue.delete() : cleanEmoji,
-      });
+      }).timeout(const Duration(seconds: 6));
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
     }
@@ -680,7 +724,7 @@ class ChatsRepository {
           .doc(messageId)
           .update({
         'deletedFor': FieldValue.arrayUnion([uid]),
-      });
+      }).timeout(const Duration(seconds: 6));
     } catch (error) {
       throw FirebaseErrorMapper.map(error);
     }
@@ -720,7 +764,7 @@ class ChatsRepository {
           'lastMessageType': MessageTypes.text,
         });
       }
-      await batch.commit();
+      await batch.commit().timeout(const Duration(seconds: 6));
 
       if (mediaId != null && mediaId.isNotEmpty) {
         unawaited(

@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/media_cache_service.dart';
+import '../../../core/services/presence_service.dart';
 import '../../../core/utils/app_exceptions.dart';
 import '../../../core/utils/firebase_error_mapper.dart';
 import '../../../core/utils/media_processor.dart';
@@ -35,6 +36,7 @@ class PendingMediaItem {
     this.fileName,
     this.replyTo,
     this.isForwarded = false,
+    this.chatExists = false,
     this.progress = 0.0,
     this.isFailed = false,
     this.isCanceled = false,
@@ -59,6 +61,7 @@ class PendingMediaItem {
   final String? fileName;
   final ReplyQuote? replyTo;
   final bool isForwarded;
+  final bool chatExists;
   final double progress;
   final bool isFailed;
   final bool isCanceled;
@@ -96,6 +99,7 @@ class PendingMediaItem {
       fileName: fileName,
       replyTo: replyTo,
       isForwarded: isForwarded,
+      chatExists: chatExists,
       progress: progress ?? this.progress,
       isFailed: isFailed ?? this.isFailed,
       isCanceled: isCanceled ?? this.isCanceled,
@@ -141,7 +145,29 @@ class MediaUploadManager
 
   @override
   Map<String, List<PendingMediaItem>> build() {
+    ref.listen<AsyncValue<bool>>(serverConnectionProvider, (prev, next) {
+      final wasConnected = prev?.value;
+      final isConnected = next.value ?? false;
+      if (wasConnected == false && isConnected) {
+        unawaited(retryFailedUploads());
+      }
+    });
     return const {};
+  }
+
+  Future<void> retryFailedUploads() async {
+    final failed = <({String chatId, String messageId})>[];
+    for (final entry in state.entries) {
+      for (final item in entry.value) {
+        if (item.isFailed && !item.isCanceled) {
+          failed.add((chatId: entry.key, messageId: item.id));
+        }
+      }
+    }
+    for (final item in failed) {
+      if (!ref.mounted) return;
+      await retryUpload(item.chatId, item.messageId);
+    }
   }
 
   List<PendingMediaItem> pendingForChat(String chatId) {
@@ -155,6 +181,7 @@ class MediaUploadManager
     required List<({String sourcePath, String caption})> photos,
     ReplyQuote? replyTo,
     bool isForwarded = false,
+    bool chatExists = false,
   }) async {
     var baseTimestamp = DateTime.now().millisecondsSinceEpoch;
     for (final photo in photos) {
@@ -172,6 +199,7 @@ class MediaUploadManager
         mimeType: 'image/jpeg',
         replyTo: replyTo,
         isForwarded: isForwarded,
+        chatExists: chatExists,
       );
       _upsertItem(item);
       unawaited(_processAndUploadPhoto(item));
@@ -186,6 +214,7 @@ class MediaUploadManager
     required int durationMs,
     ReplyQuote? replyTo,
     bool isForwarded = false,
+    bool chatExists = false,
   }) async {
     final file = File(filePath);
     final sizeBytes = await file.exists() ? await file.length() : 0;
@@ -213,6 +242,7 @@ class MediaUploadManager
       mimeType: 'audio/mp4',
       replyTo: replyTo,
       isForwarded: isForwarded,
+      chatExists: chatExists,
     );
     _upsertItem(item);
     unawaited(_uploadAudio(item));
@@ -228,6 +258,7 @@ class MediaUploadManager
     required int sizeBytes,
     ReplyQuote? replyTo,
     bool isForwarded = false,
+    bool chatExists = false,
   }) async {
     if (sizeBytes <= 0) {
       throw const AppException('Esse arquivo está vazio e não pode ser enviado.');
@@ -254,6 +285,7 @@ class MediaUploadManager
       fileName: fileName,
       replyTo: replyTo,
       isForwarded: isForwarded,
+      chatExists: chatExists,
     );
     _upsertItem(item);
     unawaited(_uploadFile(item));
@@ -269,6 +301,7 @@ class MediaUploadManager
     String caption = '',
     ReplyQuote? replyTo,
     bool isForwarded = false,
+    bool chatExists = false,
   }) async {
     if (sizeBytes <= 0 ||
         sizeBytes > AppConstants.maxChatVideoBytes ||
@@ -293,6 +326,7 @@ class MediaUploadManager
       mimeType: 'video/mp4',
       replyTo: replyTo,
       isForwarded: isForwarded,
+      chatExists: chatExists,
     );
     _upsertItem(item);
     unawaited(_uploadVideo(item));
@@ -442,6 +476,7 @@ class MediaUploadManager
             sizeBytes: current.sizeBytes,
             mimeType: 'image/jpeg',
             clientCreatedAt: current.clientCreatedAt,
+            knownChatExists: current.chatExists,
             replyTo: current.replyTo,
             isForwarded: current.isForwarded,
           );
@@ -510,6 +545,7 @@ class MediaUploadManager
             sizeBytes: bytes.length,
             mimeType: 'audio/mp4',
             clientCreatedAt: current.clientCreatedAt,
+            knownChatExists: current.chatExists,
             replyTo: current.replyTo,
             isForwarded: current.isForwarded,
           );
@@ -578,6 +614,7 @@ class MediaUploadManager
             mimeType: current.mimeType ?? 'application/octet-stream',
             fileName: current.fileName,
             clientCreatedAt: current.clientCreatedAt,
+            knownChatExists: current.chatExists,
             replyTo: current.replyTo,
             isForwarded: current.isForwarded,
           );
@@ -646,6 +683,7 @@ class MediaUploadManager
             sizeBytes: bytes.length,
             mimeType: 'video/mp4',
             clientCreatedAt: current.clientCreatedAt,
+            knownChatExists: current.chatExists,
             replyTo: current.replyTo,
             isForwarded: current.isForwarded,
           );

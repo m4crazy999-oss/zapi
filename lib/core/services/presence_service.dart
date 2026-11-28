@@ -34,9 +34,26 @@ class PresenceService {
   final FirebaseFirestore _firestore;
 
   StreamSubscription<DatabaseEvent>? _connectedSub;
+  final _connectionController = StreamController<bool>.broadcast();
   String? _boundUid;
   bool _isResumed = true;
   bool _hideLastSeen = false;
+  bool _isServerConnected = true;
+
+  bool get isServerConnected => _isServerConnected;
+
+  Stream<bool> watchServerConnection() async* {
+    yield _isServerConnected;
+    yield* _connectionController.stream;
+  }
+
+  void _updateServerConnection(bool connected) {
+    if (_isServerConnected == connected) return;
+    _isServerConnected = connected;
+    if (!_connectionController.isClosed) {
+      _connectionController.add(connected);
+    }
+  }
 
   Future<void> setHideLastSeen(bool hidden) async {
     if (_hideLastSeen == hidden) return;
@@ -71,6 +88,7 @@ class PresenceService {
       final connectedRef = _database.ref('.info/connected');
       _connectedSub = connectedRef.onValue.listen((event) async {
         final connected = event.snapshot.value == true;
+        _updateServerConnection(connected);
         if (!connected || _boundUid != uid) return;
 
         final userPresenceRef =
@@ -161,6 +179,11 @@ class PresenceService {
     _boundUid = null;
   }
 
+  Future<void> dispose() async {
+    await unbind();
+    await _connectionController.close();
+  }
+
   Stream<UserPresence> watchUserPresence(String targetUid) {
     final controller = StreamController<UserPresence>();
     StreamSubscription<DatabaseEvent>? rtdbSub;
@@ -246,7 +269,7 @@ final presenceServiceProvider = Provider<PresenceService>((ref) {
     firestore: ref.watch(firebaseFirestoreProvider),
   );
   ref.onDispose(() {
-    service.unbind();
+    service.dispose();
   });
   return service;
 });
@@ -254,4 +277,8 @@ final presenceServiceProvider = Provider<PresenceService>((ref) {
 final userPresenceProvider =
     StreamProvider.autoDispose.family<UserPresence, String>((ref, targetUid) {
   return ref.watch(presenceServiceProvider).watchUserPresence(targetUid);
+});
+
+final serverConnectionProvider = StreamProvider<bool>((ref) {
+  return ref.watch(presenceServiceProvider).watchServerConnection();
 });

@@ -130,13 +130,14 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           Expanded(
             child: contactsAsync.when(
               loading: () => const ZapiListSkeleton(showTimestamp: false),
-              error: (_, __) => Center(
+              error: (_, __) => const Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'Não foi possível carregar seus contatos.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: secondaryText),
+                  padding: EdgeInsets.all(24),
+                  child: ZapiMascotWithBubble(
+                    mood: ZapiMascotMood.waiting,
+                    mascotSize: 92,
+                    message:
+                        'Ops! Não consegui carregar seus contatos agora.',
                   ),
                 ),
               ),
@@ -145,34 +146,14 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ZapiMascot(
-                            mood: query.isNotEmpty
-                                ? ZapiMascotMood.excited
-                                : ZapiMascotMood.waiting,
-                            size: 102,
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            query.isNotEmpty
-                                ? 'Nenhum contato encontrado'
-                                : 'Sua lista está vazia',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            query.isNotEmpty
-                                ? 'Tente buscar por outro nome ou @usuário.'
-                                : 'Toque em "Adicionar contato" para encontrar alguém pelo ID exclusivo ou @usuário.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: secondaryText),
-                          ),
-                        ],
+                      child: ZapiMascotWithBubble(
+                        mood: query.isNotEmpty
+                            ? ZapiMascotMood.excited
+                            : ZapiMascotMood.waiting,
+                        mascotSize: 100,
+                        message: query.isNotEmpty
+                            ? 'Nenhum contato combina com "$query".'
+                            : 'Sua lista está vazia! Toque em "Adicionar contato" para encontrar alguém.',
                       ),
                     ),
                   );
@@ -181,7 +162,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                 return ListView.separated(
                   padding: const EdgeInsets.only(bottom: 88),
                   itemCount: contacts.length,
-                  separatorBuilder: (_, __) => const Divider(indent: 76),
+                  separatorBuilder: (_, __) => const SizedBox(height: 2),
                   itemBuilder: (context, index) {
                     final contact = contacts[index];
                     return ListTile(

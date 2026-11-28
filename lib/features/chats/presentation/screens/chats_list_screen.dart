@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/services/chat_preferences_service.dart';
+import '../../../../core/services/presence_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/chat_id_helper.dart';
 import '../../../../core/utils/date_formatter.dart';
@@ -568,6 +569,8 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
         isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
     final accentColor = Theme.of(context).colorScheme.primary;
 
+    final isServerConnected =
+        ref.watch(serverConnectionProvider).value ?? true;
     final normalizedQuery = _searchQuery.trim().toLowerCase();
     final chats = chatsAsync.value;
 
@@ -580,12 +583,12 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Não foi possível carregar suas conversas.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: secondaryText),
+                const ZapiMascotWithBubble(
+                  mood: ZapiMascotMood.waiting,
+                  mascotSize: 92,
+                  message: 'Ops! Tive um problema ao carregar suas conversas.',
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: () => ref.invalidate(userChatsProvider),
                   icon: const Icon(Icons.refresh_rounded),
@@ -643,38 +646,16 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
         bodyContent = Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ZapiMascot(
-                  mood: normalizedQuery.isNotEmpty
-                      ? ZapiMascotMood.excited
-                      : ZapiMascotMood.waiting,
-                  size: 106,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  normalizedQuery.isNotEmpty
-                      ? 'Nenhuma conversa encontrada'
-                      : (_showArchivedOnly
-                          ? 'Nenhuma conversa arquivada'
-                          : 'Nenhuma conversa ainda'),
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  normalizedQuery.isNotEmpty
-                      ? 'Tente buscar por outro nome ou @usuário.'
-                      : (_showArchivedOnly
-                          ? 'Segure uma conversa e toque em Arquivar para guardá-la aqui.'
-                          : 'Toque em "Nova conversa" abaixo para escolher um contato e começar.'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: secondaryText),
-                ),
-              ],
+            child: ZapiMascotWithBubble(
+              mood: normalizedQuery.isNotEmpty
+                  ? ZapiMascotMood.excited
+                  : ZapiMascotMood.waiting,
+              mascotSize: 102,
+              message: normalizedQuery.isNotEmpty
+                  ? 'Não achei nenhuma conversa com "$normalizedQuery".'
+                  : (_showArchivedOnly
+                      ? 'Nenhuma conversa arquivada. Segure um chat para guardar aqui.'
+                      : 'Tudo quietinho por aqui! Toque em "Nova conversa" para começar.'),
             ),
           ),
         );
@@ -683,7 +664,7 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
         bodyContent = ListView.separated(
           padding: const EdgeInsets.only(bottom: 88),
           itemCount: itemCount,
-          separatorBuilder: (_, __) => const Divider(indent: 78),
+          separatorBuilder: (_, __) => const SizedBox(height: 2),
           itemBuilder: (context, index) {
             if (showArchivedRow && index == 0) {
               return ListTile(
@@ -816,18 +797,78 @@ class _ChatsListScreenState extends ConsumerState<ChatsListScreen> {
         ),
         floatingActionButton: _showArchivedOnly
             ? null
-            : FloatingActionButton.extended(
-                onPressed: () => _openNewChatSheet(myUid),
-                backgroundColor: accentColor,
-                foregroundColor: Colors.white,
-                tooltip: 'Nova conversa',
-                icon: const Icon(Icons.chat_rounded),
-                label: const Text(
-                  'Nova conversa',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (!_isSearching)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Tooltip(
+                        message: 'Falar com o Zapinho',
+                        child: ZapiMascot(
+                          mood: ZapiMascotMood.happy,
+                          size: 56,
+                          onTap: () => context.push('/zapinho'),
+                        ),
+                      ),
+                    ),
+                  FloatingActionButton.extended(
+                    onPressed: () => _openNewChatSheet(myUid),
+                    backgroundColor: accentColor,
+                    foregroundColor: Colors.white,
+                    tooltip: 'Nova conversa',
+                    icon: const Icon(Icons.chat_rounded),
+                    label: const Text(
+                      'Nova conversa',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
-        body: bodyContent,
+        body: Column(
+          children: [
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              child: isServerConnected
+                  ? const SizedBox.shrink()
+                  : Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 7,
+                      ),
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.8,
+                              color: Color(0xFFD97706),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Reconectando ao Zapi...',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? const Color(0xFFFBBF24)
+                                  : const Color(0xFFB45309),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+            Expanded(child: bodyContent),
+          ],
+        ),
       ),
     );
   }
